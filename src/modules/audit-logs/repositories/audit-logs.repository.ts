@@ -16,7 +16,15 @@ export class AuditLogsRepository {
     userAgent?: string;
   }): Promise<AuditLog> {
     return this.prisma.auditLog.create({
-      data,
+      data: {
+        userId: data.userId ?? null,
+        action: data.action,
+        entityType: data.entityType ?? null,
+        entityId: data.entityId ?? null,
+        metadata: data.metadata !== undefined ? (data.metadata as Prisma.InputJsonValue) : undefined,
+        ipAddress: data.ipAddress ?? null,
+        userAgent: data.userAgent ?? null,
+      },
     });
   }
 

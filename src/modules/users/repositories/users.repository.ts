@@ -1,6 +1,17 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../common/database/prisma.service';
-import { User, UserStatus, Prisma } from '@prisma/client';
+import { User, UserStatus, Prisma, Role, Permission } from '@prisma/client';
+
+// User with role that includes permissions (when fetched with include)
+type RoleWithPermissions = Role & {
+  permissions: Array<{
+    permission: Permission;
+  }>;
+};
+
+type UserWithRole = User & {
+  role: RoleWithPermissions | null;
+};
 
 @Injectable()
 export class UsersRepository {
@@ -12,16 +23,24 @@ export class UsersRepository {
     firstName: string;
     lastName: string;
     roleId?: string;
-  }): Promise<User> {
+  }): Promise<UserWithRole> {
     return this.prisma.user.create({
       data,
       include: {
-        role: true,
+        role: {
+          include: {
+            permissions: {
+              include: {
+                permission: true,
+              },
+            },
+          },
+        },
       },
-    });
+    }) as Promise<UserWithRole>;
   }
 
-  async findById(id: string): Promise<User | null> {
+  async findById(id: string): Promise<UserWithRole | null> {
     return this.prisma.user.findUnique({
       where: { id },
       include: {
@@ -35,16 +54,24 @@ export class UsersRepository {
           },
         },
       },
-    });
+    }) as Promise<UserWithRole | null>;
   }
 
-  async findByEmail(email: string): Promise<User | null> {
+  async findByEmail(email: string): Promise<UserWithRole | null> {
     return this.prisma.user.findUnique({
       where: { email },
- include: {
-        role: true,
+      include: {
+        role: {
+          include: {
+            permissions: {
+              include: {
+                permission: true,
+              },
+            },
+          },
+        },
       },
-    });
+    }) as Promise<UserWithRole | null>;
   }
 
   async findAll(params: {
@@ -53,7 +80,7 @@ export class UsersRepository {
     roleId?: string;
     page: number;
     limit: number;
-  }): Promise<{ data: User[]; total: number }> {
+  }): Promise<{ data: UserWithRole[]; total: number }> {
     const { search, status, roleId, page, limit } = params;
     const skip = (page - 1) * limit;
 
@@ -79,7 +106,15 @@ export class UsersRepository {
       this.prisma.user.findMany({
         where,
         include: {
-          role: true,
+          role: {
+            include: {
+              permissions: {
+                include: {
+                  permission: true,
+                },
+              },
+            },
+          },
         },
         skip,
         take: limit,
@@ -88,37 +123,61 @@ export class UsersRepository {
       this.prisma.user.count({ where }),
     ]);
 
-    return { data, total };
+    return { data: data as UserWithRole[], total };
   }
 
-  async update(id: string, data: Prisma.UserUpdateInput): Promise<User> {
+  async update(id: string, data: Prisma.UserUpdateInput): Promise<UserWithRole> {
     return this.prisma.user.update({
       where: { id },
       data,
       include: {
-        role: true,
+        role: {
+          include: {
+            permissions: {
+              include: {
+                permission: true,
+              },
+            },
+          },
+        },
       },
-    });
+    }) as Promise<UserWithRole>;
   }
 
-  async updateStatus(id: string, status: UserStatus): Promise<User> {
+  async updateStatus(id: string, status: UserStatus): Promise<UserWithRole> {
     return this.prisma.user.update({
       where: { id },
       data: { status },
       include: {
-        role: true,
+        role: {
+          include: {
+            permissions: {
+              include: {
+                permission: true,
+              },
+            },
+          },
+        },
       },
-    });
+    }) as Promise<UserWithRole>;
   }
 
-  async updateRole(id: string, roleId: string | null): Promise<User> {
+  async updateRole(id: string, roleId: string | null): Promise<UserWithRole> {
     return this.prisma.user.update({
       where: { id },
       data: { roleId },
       include: {
-        role: true,
+        role: {
+          include: {
+            permissions: {
+              include: {
+                permission: true,
+              },
+            },
+          },
+        },
       },
-    });
+    }) as Promise<UserWithRole>;
   }
 
   async delete(id: string): Promise<User> {

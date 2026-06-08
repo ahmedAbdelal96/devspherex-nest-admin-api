@@ -1,6 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../common/database/prisma.service';
-import { Role, Prisma } from '@prisma/client';
+import { Role, Prisma, Permission } from '@prisma/client';
+
+type RoleWithPermissions = Role & {
+  permissions: Array<{
+    permission: Permission;
+  }>;
+};
 
 @Injectable()
 export class RolesRepository {
@@ -10,27 +16,30 @@ export class RolesRepository {
     name: string;
     description?: string;
     permissionIds?: string[];
-  }): Promise<Role> {
-    return this.prisma.role.create({
+  }): Promise<RoleWithPermissions> {
+    // Create role first
+    const role = await this.prisma.role.create({
       data: {
         name: data.name,
         description: data.description,
-        permissions:
-          data.permissionIds?.map((id) => ({
-            permission: { connect: { id } },
-          })) || [],
-      },
-      include: {
-        permissions: {
-          include: {
-            permission: true,
-          },
-        },
       },
     });
+
+    // Connect permissions if provided
+    if (data.permissionIds && data.permissionIds.length > 0) {
+      await this.prisma.rolePermission.createMany({
+        data: data.permissionIds.map((permissionId) => ({
+          roleId: role.id,
+          permissionId,
+        })),
+      });
+    }
+
+    // Return with permissions
+    return this.findById(role.id) as Promise<RoleWithPermissions>;
   }
 
-  async findById(id: string): Promise<Role | null> {
+  async findById(id: string): Promise<RoleWithPermissions | null> {
     return this.prisma.role.findUnique({
       where: { id },
       include: {
@@ -40,27 +49,27 @@ export class RolesRepository {
           },
         },
       },
-    });
+    }) as Promise<RoleWithPermissions | null>;
   }
 
-  async findByName(name: string): Promise<Role | null> {
+  async findByName(name: string): Promise<RoleWithPermissions | null> {
     return this.prisma.role.findUnique({
       where: { name },
- include: {
+      include: {
         permissions: {
           include: {
             permission: true,
           },
         },
       },
-    });
+    }) as Promise<RoleWithPermissions | null>;
   }
 
   async findAll(params: {
     search?: string;
     page: number;
     limit: number;
-  }): Promise<{ data: Role[]; total: number }> {
+  }): Promise<{ data: RoleWithPermissions[]; total: number }> {
     const { search, page, limit } = params;
     const skip = (page - 1) * limit;
 
@@ -90,10 +99,10 @@ export class RolesRepository {
       this.prisma.role.count({ where }),
     ]);
 
-    return { data, total };
+    return { data: data as RoleWithPermissions[], total };
   }
 
-  async update(id: string, data: Prisma.RoleUpdateInput): Promise<Role> {
+  async update(id: string, data: Prisma.RoleUpdateInput): Promise<RoleWithPermissions> {
     return this.prisma.role.update({
       where: { id },
       data,
@@ -104,7 +113,7 @@ export class RolesRepository {
           },
         },
       },
-    });
+    }) as Promise<RoleWithPermissions>;
   }
 
   async delete(id: string): Promise<Role> {

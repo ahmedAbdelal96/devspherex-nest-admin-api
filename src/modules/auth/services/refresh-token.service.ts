@@ -1,7 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import * as bcrypt from 'bcryptjs';
+
+// TODO: In Phase 3, redesign refresh token security:
+// - Add jti (unique token ID) for token tracking
+// - Add familyId for token reuse detection
+// - Store tokenHash instead of raw token
+// - Implement refresh token rotation
 
 @Injectable()
 export class RefreshTokenService {
@@ -10,7 +16,7 @@ export class RefreshTokenService {
   constructor(private readonly configService: ConfigService) {}
 
   async generateRefreshToken(): Promise<string> {
-    const token = uuidv4();
+    const token = randomUUID();
     return bcrypt.hash(token, this.SALT_ROUNDS);
   }
 

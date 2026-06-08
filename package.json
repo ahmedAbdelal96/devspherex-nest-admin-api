@@ -29,9 +29,9 @@
     "@nestjs/platform-express": "^11.0.0",
     "@nestjs/swagger": "^11.0.0",
     "@nestjs/throttler": "^6.0.0",
-    "@prisma/adapter-pg": "^7.0.0",
     "@prisma/client": "^7.0.0",
     "bcryptjs": "^2.4.3",
+    "dotenv": "^16.4.0",
     "pg": "^8.13.0",
     "zod": "^3.23.0",
     "class-transformer": "^0.5.1",
@@ -41,8 +41,7 @@
     "passport-jwt": "^4.0.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
-    "swagger-ui-express": "^5.0.0",
-    "uuid": "^10.0.0"
+    "swagger-ui-express": "^5.0.0"
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.0",
@@ -52,7 +51,6 @@
     "@types/node": "^22.0.0",
     "@types/passport-jwt": "^4.0.1",
     "@types/swagger-ui-express": "^4.1.6",
-    "@types/uuid": "^10.0.0",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",
     "eslint": "^9.0.0",
