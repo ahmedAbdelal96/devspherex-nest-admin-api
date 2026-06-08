@@ -1,0 +1,150 @@
+// Prisma schema for NestJS Admin API
+// Practical Clean Modular Architecture - Normalized Database Structure
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Users table
+model User {
+  id String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  firstName    String   @map("first_name")
+  lastName     String   @map("last_name")
+  status       UserStatus @default(ACTIVE)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  role Role? @relation(fields: [roleId], references: [id])
+  roleId                   String?                  @map("role_id")
+  permissionOverrides      UserPermissionOverride[] // Custom permission overrides
+  refreshTokens            RefreshToken[]
+  auditLogs AuditLog[]
+
+  @@map("users")
+  @@index([email])
+  @@index([status])
+  @@index([roleId])
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+// Roles table
+model Role {
+  id String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  isSystem    Boolean  @default(false) @map("is_system") // System roles cannot be deleted
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  permissions RolePermission[]
+  users             User[]
+
+  @@map("roles")
+  @@index([is_system])
+}
+
+// Permissions table
+model Permission {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  groupName   String   @map("group_name") // e.g., "users", "roles", "audit_logs"
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  // Relations
+  rolePermissions       RolePermission[]
+  userPermissionOverrides UserPermissionOverride[]
+
+  @@map("permissions")
+  @@index([group_name])
+  @@index([name])
+}
+
+// Role-Permission join table (normalized relational structure)
+model RolePermission {
+  id String   @id @default(uuid())
+  roleId     String   @map("role_id")
+  permissionId String @map("permission_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  // Relations
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@map("role_permissions")
+  @@index([roleId])
+  @@index([permissionId])
+}
+
+// User Permission Overrides (custom per-user permissions beyond their role)
+model UserPermissionOverride {
+  id           String   @id @default(uuid())
+  userId       String   @map("user_id")
+  permissionId String   @map("permission_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  // Relations
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, permissionId])
+  @@map("user_permission_overrides")
+  @@index([userId])
+  @@index([permissionId])
+}
+
+// Refresh Tokens table
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String   @map("user_id")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  revokedAt DateTime? @map("revoked_at")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("refresh_tokens")
+  @@index([token])
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// Audit Logs table
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?  @map("user_id")
+  action     String
+  entityType String?  @map("entity_type")
+  entityId   String?  @map("entity_id")
+  metadata Json?
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  // Relations
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@map("audit_logs")
+  @@index([userId])
+  @@index([action])
+  @@index([entity_type])
+  @@index([entity_id])
+  @@index([createdAt])
+}
