@@ -7,7 +7,6 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 // Users table
@@ -54,7 +53,7 @@ model Role {
   users             User[]
 
   @@map("roles")
-  @@index([is_system])
+  @@index([isSystem])
 }
 
 // Permissions table
@@ -70,7 +69,7 @@ model Permission {
   userPermissionOverrides UserPermissionOverride[]
 
   @@map("permissions")
-  @@index([group_name])
+  @@index([groupName])
   @@index([name])
 }
 
@@ -144,7 +143,7 @@ model AuditLog {
   @@map("audit_logs")
   @@index([userId])
   @@index([action])
-  @@index([entity_type])
-  @@index([entity_id])
+  @@index([entityType])
+  @@index([entityId])
   @@index([createdAt])
 }
