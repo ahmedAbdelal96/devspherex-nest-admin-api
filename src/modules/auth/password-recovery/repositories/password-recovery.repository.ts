@@ -24,9 +24,10 @@ export interface CreateChallengeInput {
   emailHash: string;
   purpose: PasswordRecoveryPurpose;
   channel: string;
-  otpHash: string;
-  otpExpiresAt: Date;
+  otpHash: string | null;
+  otpExpiresAt: Date | null;
   maxAttempts: number;
+  isMarker?: boolean;
   requestIp?: string;
   userAgent?: string;
 }
@@ -38,6 +39,9 @@ export class PasswordRecoveryRepository {
   /**
    * Create a new challenge. Caller is expected to have revoked older
    * active challenges for the same emailHash/purpose before calling.
+   *
+   * For "marker" challenges (unknown email placeholders), pass
+   * `isMarker: true` and leave `otpHash` / `otpExpiresAt` as null.
    */
   async create(input: CreateChallengeInput): Promise<PasswordRecoveryChallenge> {
     return this.prisma.passwordRecoveryChallenge.create({
@@ -49,6 +53,41 @@ export class PasswordRecoveryRepository {
         otpHash: input.otpHash,
         otpExpiresAt: input.otpExpiresAt,
         maxAttempts: input.maxAttempts,
+        isMarker: input.isMarker ?? false,
+        requestIp: input.requestIp ?? null,
+        userAgent: input.userAgent ?? null,
+      },
+    });
+  }
+
+  /**
+   * Create a non-verifiable "marker" challenge for an unknown email.
+   *
+   * Marker challenges are placeholders that:
+   *   - occupy the emailHash slot so the cooldown works for unknown emails
+   *   - keep timing similar to the known-email path
+   *   - carry no OTP, so they can never be consumed
+   *   - are automatically filtered out by `findLatestActiveByEmail` and
+   *     by the verify / reset use-cases
+   */
+  async createMarker(input: {
+    emailHash: string;
+    purpose: PasswordRecoveryPurpose;
+    channel: string;
+    maxAttempts: number;
+    requestIp?: string;
+    userAgent?: string;
+  }): Promise<PasswordRecoveryChallenge> {
+    return this.prisma.passwordRecoveryChallenge.create({
+      data: {
+        userId: null,
+        emailHash: input.emailHash,
+        purpose: input.purpose,
+        channel: input.channel as Prisma.PasswordRecoveryChallengeCreateInput['channel'],
+        otpHash: null,
+        otpExpiresAt: null,
+        maxAttempts: input.maxAttempts,
+        isMarker: true,
         requestIp: input.requestIp ?? null,
         userAgent: input.userAgent ?? null,
       },
@@ -57,7 +96,10 @@ export class PasswordRecoveryRepository {
 
   /**
    * Find the latest challenge by emailHash + purpose that is still active
-   * (not revoked, not consumed, not expired).
+   * (not revoked, not consumed, not expired, not a marker).
+   *
+   * Marker challenges are excluded — they are placeholders that exist
+   * only for cooldown enforcement, not real OTP flows.
    */
   async findLatestActiveByEmail(
     emailHash: string,
@@ -67,6 +109,7 @@ export class PasswordRecoveryRepository {
       where: {
         emailHash,
         purpose,
+        isMarker: false,
         revokedAt: null,
         consumedAt: null,
       },
@@ -76,7 +119,8 @@ export class PasswordRecoveryRepository {
 
   /**
    * Find the latest challenge by emailHash + purpose, regardless of state.
-   * Used for cooldown detection.
+   * Used for cooldown detection. Includes markers so that the cooldown
+   * applies to unknown-email placeholders as well.
    */
   async findLatestByEmail(
     emailHash: string,
@@ -103,7 +147,8 @@ export class PasswordRecoveryRepository {
 
   /**
    * Revoke all currently active (non-revoked, non-consumed) challenges for
-   * the given emailHash + purpose. Returns the count of revoked rows.
+   * the given emailHash + purpose, including markers. Returns the count of
+   * revoked rows.
    */
   async revokeActiveForEmail(
     emailHash: string,
@@ -149,6 +194,7 @@ export class PasswordRecoveryRepository {
   /**
    * Increment failedAttempts atomically. If the new value reaches
    * maxAttempts, also set revokedAt. Returns the updated challenge.
+   * Markers cannot have their failedAttempts incremented.
    */
   async incrementFailedAttempts(
     id: string,
@@ -161,6 +207,11 @@ export class PasswordRecoveryRepository {
       });
       if (!current) {
         throw new Error(`Challenge ${id} not found`);
+      }
+      if (current.isMarker) {
+        // Markers are placeholders — they cannot be verified, so their
+        // attempt counter is meaningless. Return the row unchanged.
+        return current;
       }
       const nextAttempts = current.failedAttempts + 1;
       const shouldRevoke = nextAttempts >= maxAttempts;
@@ -177,7 +228,7 @@ export class PasswordRecoveryRepository {
   /**
    * Mark an OTP as verified and persist the reset token hash + expiry.
    * Returns null if the challenge was not in a valid state to be verified
-   * (revoked, consumed, otpExpired).
+   * (revoked, consumed, otpExpired, or a marker).
    */
   async markOtpVerified(
     id: string,
@@ -188,6 +239,7 @@ export class PasswordRecoveryRepository {
     const result = await this.prisma.passwordRecoveryChallenge.updateMany({
       where: {
         id,
+        isMarker: false,
         revokedAt: null,
         consumedAt: null,
         otpVerifiedAt: null,
@@ -207,7 +259,8 @@ export class PasswordRecoveryRepository {
 
   /**
    * Mark a challenge as consumed. Returns true if the update applied
-   * (consumedAt was null), false otherwise (already consumed or revoked).
+   * (consumedAt was null), false otherwise (already consumed, revoked,
+   * or a marker). Markers can never be consumed.
    *
    * This is the one-time-use guard for the reset session token.
    */
@@ -215,6 +268,7 @@ export class PasswordRecoveryRepository {
     const result = await this.prisma.passwordRecoveryChallenge.updateMany({
       where: {
         id,
+        isMarker: false,
         revokedAt: null,
         consumedAt: null,
       },

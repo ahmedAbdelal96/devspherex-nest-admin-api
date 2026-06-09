@@ -3,9 +3,11 @@ import {
   Post,
   Body,
   Get,
+  Req,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import { Public, Authenticated } from '../../common/rbac';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import {
@@ -111,12 +113,24 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async forgotPassword(
     @Body() dto: RequestPasswordRecoveryDto,
-  ): Promise<{ message: string }> {
-    await this.requestPasswordRecoveryUseCase.execute(dto.email);
-    return {
-      message:
-        'If this email exists, password recovery instructions will be sent.',
-    };
+    @Req() req: Request,
+  ): Promise<{ message: string; otp?: string }> {
+    const requestIp =
+      (req.ip as string | undefined) ??
+      (req.socket as { remoteAddress?: string } | undefined)?.remoteAddress;
+    const userAgentRaw = req.headers['user-agent'];
+    const userAgent = Array.isArray(userAgentRaw)
+      ? userAgentRaw[0]
+      : (userAgentRaw as string | undefined);
+
+    // The use-case returns the exact response: in production it is
+    // always the generic message. In non-production with
+    // PASSWORD_RECOVERY_DEV_RETURN_OTP=true it additionally includes
+    // `otp` so integration tests can pick it up.
+    return this.requestPasswordRecoveryUseCase.execute(dto.email, {
+      requestIp,
+      userAgent,
+    });
   }
 
   @Public()

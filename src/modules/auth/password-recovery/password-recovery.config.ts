@@ -3,7 +3,12 @@
  *
  * Reads password-recovery-related env variables via @nestjs/config and
  * validates them at module construction time. Rejects unsafe configurations
- * in production (default pepper, CONSOLE channel, dev OTP return).
+ * in production:
+ *   - When PASSWORD_RECOVERY_ENABLED=true:
+ *     * PASSWORD_RECOVERY_CHANNEL must NOT be CONSOLE or NOOP
+ *     * PASSWORD_RECOVERY_PEPPER must not be a weak default and ≥16 chars
+ *   - Always in production:
+ *     * PASSWORD_RECOVERY_DEV_RETURN_OTP must be false
  *
  * All env variables are read from the `passwordRecovery` namespace:
  *   PASSWORD_RECOVERY_ENABLED
@@ -40,10 +45,6 @@ const WEAK_PEPPER_VALUES = new Set<string>([
   'default',
   '',
 ]);
-
-const ALLOWED_CHANNELS_IN_PRODUCTION: ReadonlySet<PasswordRecoveryChannel> = new Set<
-  PasswordRecoveryChannel
->([PASSWORD_RECOVERY_CHANNELS.NOOP, PASSWORD_RECOVERY_CHANNELS.EMAIL]);
 
 @Injectable()
 export class PasswordRecoveryConfig {
@@ -197,32 +198,45 @@ export class PasswordRecoveryConfig {
       return;
     }
 
-    if (WEAK_PEPPER_VALUES.has(this.pepper)) {
-      throw new BadRequestException(
-        'PASSWORD_RECOVERY_PEPPER must be set to a strong, non-default value in production',
-      );
-    }
-    if (this.pepper.length < 16) {
-      throw new BadRequestException(
-        'PASSWORD_RECOVERY_PEPPER must be at least 16 characters in production',
-      );
+    if (this.enabled) {
+      // When recovery is enabled in production, the configured channel MUST
+      // be capable of reaching real users. CONSOLE writes to the server
+      // log only, and NOOP discards entirely — neither is acceptable for
+      // live deployments.
+      if (
+        this.channel === PASSWORD_RECOVERY_CHANNELS.CONSOLE ||
+        this.channel === PASSWORD_RECOVERY_CHANNELS.NOOP
+      ) {
+        throw new BadRequestException(
+          `PASSWORD_RECOVERY_CHANNEL=${this.channel} is not allowed in production while PASSWORD_RECOVERY_ENABLED=true. ` +
+            `Set PASSWORD_RECOVERY_ENABLED=false, or implement a real provider (EMAIL/WHATSAPP/SMS) and configure the channel accordingly.`,
+        );
+      }
+
+      // Weak pepper is rejected only when recovery is actually enabled —
+      // if recovery is disabled, the pepper is never used, so we relax.
+      if (WEAK_PEPPER_VALUES.has(this.pepper)) {
+        throw new BadRequestException(
+          'PASSWORD_RECOVERY_PEPPER must be set to a strong, non-default value in production when recovery is enabled',
+        );
+      }
+      if (this.pepper.length < 16) {
+        throw new BadRequestException(
+          'PASSWORD_RECOVERY_PEPPER must be at least 16 characters in production when recovery is enabled',
+        );
+      }
+    } else {
+      // Recovery is disabled in production. We still warn if a weak pepper
+      // is set so operators notice it before re-enabling the feature.
+      if (WEAK_PEPPER_VALUES.has(this.pepper) || this.pepper.length < 16) {
+        this.logger.warn(
+          'PASSWORD_RECOVERY_PEPPER is a weak default. It is not validated strictly while PASSWORD_RECOVERY_ENABLED=false, ' +
+            'but make sure to set a strong value before re-enabling recovery in production.',
+        );
+      }
     }
 
-    if (
-      this.channel === PASSWORD_RECOVERY_CHANNELS.CONSOLE ||
-      this.channel === PASSWORD_RECOVERY_CHANNELS.NOOP
-    ) {
-      // CONSOLE/NOOP channel in production is suspicious — log a warning but allow
-      // because some companies intentionally disable password recovery in production.
-      this.logger.warn(
-        `PASSWORD_RECOVERY_CHANNEL is "${this.channel}" in production. Password recovery delivery will not reach users.`,
-      );
-    } else if (!ALLOWED_CHANNELS_IN_PRODUCTION.has(this.channel)) {
-      this.logger.warn(
-        `PASSWORD_RECOVERY_CHANNEL is "${this.channel}" in production. Make sure a real provider is wired up before relying on it.`,
-      );
-    }
-
+    // devReturnOtp is ALWAYS rejected in production, regardless of enabled.
     if (this.devReturnOtp) {
       throw new BadRequestException(
         'PASSWORD_RECOVERY_DEV_RETURN_OTP must be false in production',

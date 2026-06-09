@@ -61,6 +61,12 @@ export class VerifyPasswordRecoveryOtpUseCase {
     if (challenge.revokedAt || challenge.consumedAt) {
       throw new UnauthorizedException(GENERIC_OTP_ERROR);
     }
+    if (!challenge.otpExpiresAt) {
+      // Markers and any challenge without an OTP expiry cannot be
+      // verified. findLatestActiveByEmail already filters markers, but
+      // this check defends against future schema variants.
+      throw new UnauthorizedException(GENERIC_OTP_ERROR);
+    }
     if (challenge.otpExpiresAt.getTime() <= Date.now()) {
       throw new UnauthorizedException(GENERIC_OTP_ERROR);
     }

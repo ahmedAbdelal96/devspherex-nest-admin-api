@@ -14,10 +14,24 @@
  *   - Older active challenges for the same emailHash + purpose are revoked
  *     before creating the new one, so OTPs are strictly one-time-use.
  *   - Cooldown is enforced by checking the latest challenge for the
- *     emailHash. Cooldown applies to the address, not to a user record.
- *   - When the email does not exist, we still perform a dummy hash so
- *     that timing remains similar (best-effort timing equality, no
- *     sensitive information leaked).
+ *     emailHash. Cooldown applies to the address, not to a user record,
+ *     and works for BOTH known and unknown emails:
+ *       * For known emails: a real challenge is created and the OTP is
+ *         dispatched through the configured channel.
+ *       * For unknown emails: a "marker" challenge is created (userId=null,
+ *         isMarker=true, otpHash=null). The marker has no OTP, so it
+ *         can never be verified or consumed; it only occupies the
+ *         emailHash slot so the cooldown applies uniformly.
+ *   - Timing on the unknown-email path is balanced with the known-email
+ *     path: the use-case always performs the same number of database
+ *     round-trips (revoke, create, optional channel dispatch). The
+ *     channel dispatch is the only asymmetric cost and is currently
+ *     a no-op (the placeholder channel call is included for future
+ *     providers to plug in without timing changes).
+ *   - Dev-only `devOtp` field is included in the response only when
+ *     `PASSWORD_RECOVERY_DEV_RETURN_OTP=true` and the environment is
+ *     not production. The production boot guard refuses to start the
+ *     app when this flag is true.
  */
 
 import { Injectable, Logger } from '@nestjs/common';
@@ -68,7 +82,8 @@ export class RequestPasswordRecoveryUseCase {
     const emailHash = this.hashing.hashEmail(normalizedEmail);
 
     // Cooldown check: enforced on emailHash so it works for both known and
-    // unknown emails.
+    // unknown emails (markers are included in findLatestByEmail so an
+    // unknown-email request still hits the cooldown).
     const latest = await this.repository.findLatestByEmail(
       emailHash,
       PASSWORD_RECOVERY_PURPOSES.PASSWORD_RESET,
@@ -82,6 +97,15 @@ export class RequestPasswordRecoveryUseCase {
       return { message: PASSWORD_RECOVERY_GENERIC_MESSAGE };
     }
 
+    // Revoke any older active challenges for this emailHash + purpose so
+    // a previously-issued OTP cannot be used after a new one is sent.
+    // This applies to markers too, so a previous unknown-email marker
+    // gets cleaned up before a new one is created.
+    await this.repository.revokeActiveForEmail(
+      emailHash,
+      PASSWORD_RECOVERY_PURPOSES.PASSWORD_RESET,
+    );
+
     // Look up user by normalized email. Use-case ignores whether the user
     // exists for the public response.
     const user = await this.prisma.user.findUnique({
@@ -89,21 +113,23 @@ export class RequestPasswordRecoveryUseCase {
     });
 
     if (!user) {
-      // No account — return the same generic success. Do not create a
-      // challenge (we have no userId to attach). Cooldown already
-      // protects this address from rapid-fire calls.
+      // No account — create a marker challenge so the cooldown applies
+      // uniformly. The marker has no OTP, so it can never be verified or
+      // consumed; the verify-otp and reset-password endpoints ignore it
+      // (findLatestActiveByEmail filters out isMarker=true).
+      await this.repository.createMarker({
+        emailHash,
+        purpose: PASSWORD_RECOVERY_PURPOSES.PASSWORD_RESET,
+        channel: this.config.channel,
+        maxAttempts: this.policy.getMaxAttempts(),
+        requestIp: context.requestIp,
+        userAgent: context.userAgent,
+      });
       this.logger.debug(
-        `Password recovery request for unknown email hash prefix=${emailHash.slice(0, 8)}...`,
+        `Password recovery marker created for unknown email hash prefix=${emailHash.slice(0, 8)}...`,
       );
       return { message: PASSWORD_RECOVERY_GENERIC_MESSAGE };
     }
-
-    // Revoke any older active challenges for this emailHash + purpose so
-    // a previously-issued OTP cannot be used after a new one is sent.
-    await this.repository.revokeActiveForEmail(
-      emailHash,
-      PASSWORD_RECOVERY_PURPOSES.PASSWORD_RESET,
-    );
 
     const otp = this.tokens.generateOtp();
     const otpHash = this.hashing.hashOtp('pending', otp);
@@ -145,8 +171,10 @@ export class RequestPasswordRecoveryUseCase {
       message: PASSWORD_RECOVERY_GENERIC_MESSAGE,
     };
     if (!this.config.isProduction && this.config.devReturnOtp) {
-      // Dev-only: never enabled in production. The guard above prevents
-      // reaching this branch in production, but we double-check anyway.
+      // Dev-only: never enabled in production. The boot guard in
+      // PasswordRecoveryConfig refuses to start the app when
+      // devReturnOtp is true in production, so this branch can only
+      // run in non-production environments.
       response.devOtp = otp;
     }
     return response;

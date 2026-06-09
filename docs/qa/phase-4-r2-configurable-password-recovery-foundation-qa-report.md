@@ -428,3 +428,28 @@ deleted). All other providers are unchanged.
   `PasswordRecoveryChallenge` rows accumulate. A scheduled job
   that prunes `revokedAt` / `consumedAt` rows older than N days is
   recommended.
+
+---
+
+## 13. R3 Addendum — Corrected Claims
+
+The following claims in the R2 report were aspirational or
+incomplete. They were corrected in Phase 4-R3
+(`docs/qa/phase-4-r3-password-recovery-hardening-contract-correction-qa-report.md`):
+
+| # | R2 claim | What was actually true at end of R2 | R3 fix |
+|---|----------|--------------------------------------|--------|
+| 1 | "Successful reset revokes refresh tokens and increments `tokenVersion` in the same transaction as the password update" | `repository.markConsumed()` ran OUTSIDE the transaction. If it succeeded and the later transaction failed, the user was stuck with a consumed-but-unapplied token. | R3 moves ALL side effects (consume, password update, revoke, tokenVersion, revoke-other-challenges) into a single Prisma interactive transaction. `markConsumed` is no longer called from this use-case. |
+| 2 | "The cooldown is enforced for both known and unknown emails" | The unknown-email branch returned early without creating a challenge, so the cooldown effectively did not anchor on the address. | R3 adds a `PasswordRecoveryChallenge` marker row (`isMarker=true`, `userId=null`, no OTP) for unknown emails. The cooldown check uses `findLatestByEmail` which includes markers. |
+| 3 | "If devReturnOtp is true, response includes OTP" | The use-case returned the OTP, but the controller dropped the response and always returned the generic message. | R3 makes the controller return the use-case's exact result. |
+| 4 | "requestIp and userAgent are supported in the use-case/schema" | The columns existed and the use-case interface accepted a context, but the controller never passed one. | R3 adds `@Req()` to the controller and forwards `requestIp` / `userAgent` to the use-case. |
+| 5 | "Production boot guards: CONSOLE/NOOP emit a warning" | The config emitted a warning but allowed the boot. | R3 rejects `CONSOLE`/`NOOP` outright in production when `PASSWORD_RECOVERY_ENABLED=true`. |
+| 6 | ".env was updated locally but ignored by git" | There was no committed `.env.example`. | R3 ships a `.env.example` with safe dev defaults and inline comments. |
+| 7 | "Response timing is best-effort" | The R2 report said "timing floor on the unknown-email branch" but the code did not implement one. | R3 still does not implement a hard timing floor (it is a followup), but the marker path now has the same number of DB round-trips as the known-email path, narrowing the gap. The R2 wording is corrected in the R3 docs. |
+
+R3 did NOT change the public contract shape — every endpoint still
+returns the same success/failure response codes, and the headers and
+DTOs are unchanged. The hardening was entirely in the side-effect
+ordering, the unknown-email handling, the controller plumbing, the
+config strictness, and the developer experience (`.env.example`).
+

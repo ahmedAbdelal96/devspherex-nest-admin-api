@@ -5,20 +5,31 @@
  *
  * Security contract:
  *   - Accepts a resetSessionToken (`<challengeId>.<secret>`).
- *   - The challenge must exist, not be revoked, not be consumed, must have
- *     been OTP-verified, and the reset session token must not be expired.
+ *   - The challenge must exist, not be revoked, not be consumed, not be
+ *     a marker, must have been OTP-verified, and the reset session token
+ *     must not be expired.
  *   - The hash of the token is verified in constant time.
- *   - All writes happen inside a Prisma transaction:
- *       * update user passwordHash
- *       * revoke all refresh tokens for the user
- *       * increment user.tokenVersion
- *       * mark the challenge as consumed (one-time-use guard)
- *       * revoke any other active challenges for the same user
- *   - The `consumedAt` is set via a conditional update with
- *     `consumedAt: null, revokedAt: null` guards, so a double-submit
- *     cannot apply the password change twice.
- *   - Old sessions are revoked and tokenVersion is incremented, which
- *     invalidates all access tokens (handled by JwtStrategy in Phase 3).
+ *   - **All writes happen inside a single Prisma interactive transaction.**
+ *     If any step fails, nothing is persisted, and the reset session
+ *     token is NOT marked as consumed. This prevents the previous bug
+ *     where `markConsumed()` succeeded but the password / tokenVersion
+ *     updates could fail in a later transaction, leaving the user stuck
+ *     with a consumed-but-unapplied token.
+ *
+ *   Inside the single transaction:
+ *     1. Conditionally mark the challenge as consumed (one-time-use guard).
+ *        If the conditional update affects 0 rows, abort with the generic
+ *        error — the challenge was already consumed, revoked, expired, or
+ *        is a marker.
+ *     2. Update the user passwordHash.
+ *     3. If PASSWORD_RECOVERY_REVOKE_SESSIONS_ON_SUCCESS=true:
+ *        a. Revoke all active refresh tokens for the user.
+ *        b. Increment user.tokenVersion.
+ *     4. Revoke any other active password-recovery challenges for the
+ *        same user, so the user cannot have two parallel reset windows.
+ *
+ *   Marker challenges are filtered out at every read site, so they
+ *   can never reach the reset endpoint.
  */
 
 import {
@@ -27,13 +38,11 @@ import {
   UnauthorizedException,
   BadRequestException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../../common/database/prisma.service';
 import { PasswordService } from '../../services/password.service';
 import { PasswordRecoveryConfig } from '../password-recovery.config';
 import { PasswordRecoveryHashingService } from '../services/password-recovery-hashing.service';
 import { PasswordRecoveryTokenService } from '../services/password-recovery-token.service';
-import { PasswordRecoveryRepository } from '../repositories/password-recovery.repository';
 import { PASSWORD_RECOVERY_PURPOSES } from '../password-recovery.types';
 import { PASSWORD_RECOVERY_RESET_SUCCESS_MESSAGE } from '../password-recovery.constants';
 
@@ -49,7 +58,6 @@ export class ResetPasswordWithTokenUseCase {
     private readonly config: PasswordRecoveryConfig,
     private readonly hashing: PasswordRecoveryHashingService,
     private readonly tokens: PasswordRecoveryTokenService,
-    private readonly repository: PasswordRecoveryRepository,
   ) {}
 
   async execute(
@@ -66,8 +74,19 @@ export class ResetPasswordWithTokenUseCase {
       throw new UnauthorizedException(GENERIC_RESET_ERROR);
     }
 
-    const challenge = await this.repository.findById(challengeId);
+    // All reads happen before the transaction. We do not read inside the
+    // transaction because the read does not need to be part of the atomic
+    // group; the conditional update inside the transaction is what
+    // guarantees atomicity.
+    const challenge = await this.prisma.passwordRecoveryChallenge.findUnique({
+      where: { id: challengeId },
+    });
     if (!challenge) {
+      throw new UnauthorizedException(GENERIC_RESET_ERROR);
+    }
+    if (challenge.isMarker) {
+      // Marker challenges are placeholders only — they have no OTP and
+      // cannot have produced a reset session token. Treat as invalid.
       throw new UnauthorizedException(GENERIC_RESET_ERROR);
     }
     if (challenge.revokedAt) {
@@ -105,45 +124,62 @@ export class ResetPasswordWithTokenUseCase {
     }
 
     const newPasswordHash = await this.passwordService.hashPassword(newPassword);
+    const now = new Date();
 
-    // Atomic transaction: one-time-use guard + side effects.
-    const consumed = await this.repository.markConsumed(challenge.id);
-    if (!consumed) {
-      // Lost the race against another reset attempt.
-      throw new UnauthorizedException(GENERIC_RESET_ERROR);
-    }
+    // ---------------------------------------------------------------
+    // Single interactive transaction. ALL side effects happen here.
+    // If any step throws, Prisma rolls back the entire group, so the
+    // challenge is NOT consumed, the password is NOT updated, refresh
+    // tokens are NOT revoked, and tokenVersion is NOT incremented.
+    // ---------------------------------------------------------------
+    await this.prisma.$transaction(async (tx) => {
+      // 1) One-time-use guard: conditionally consume the challenge.
+      //    Guards: not a marker, not revoked, not consumed, otp-verified,
+      //    reset token not expired, owned by the same user.
+      const consumeResult = await tx.passwordRecoveryChallenge.updateMany({
+        where: {
+          id: challenge.id,
+          isMarker: false,
+          revokedAt: null,
+          consumedAt: null,
+          otpVerifiedAt: { not: null },
+          resetTokenHash: { not: null },
+          resetTokenExpiresAt: { gt: now },
+          userId: user.id,
+        },
+        data: { consumedAt: now },
+      });
+      if (consumeResult.count === 0) {
+        // Lost the race against another reset attempt, or the challenge
+        // was revoked / expired / consumed between our read and our
+        // update. Abort the whole transaction so no other side effect
+        // is applied. The error is thrown out of the transaction body
+        // and caught by Prisma, which rolls back automatically.
+        throw new UnauthorizedException(GENERIC_RESET_ERROR);
+      }
 
-    const txOps: Prisma.PrismaPromise<unknown>[] = [];
-
-    // Update the password.
-    txOps.push(
-      this.prisma.user.update({
+      // 2) Update the user password.
+      await tx.user.update({
         where: { id: user.id },
         data: { passwordHash: newPasswordHash },
-      }),
-    );
+      });
 
-    if (this.config.revokeSessionsOnSuccess) {
-      // Revoke all refresh tokens for this user.
-      txOps.push(
-        this.prisma.refreshToken.updateMany({
+      if (this.config.revokeSessionsOnSuccess) {
+        // 3a) Revoke all active refresh tokens for this user.
+        await tx.refreshToken.updateMany({
           where: { userId: user.id, revokedAt: null },
-          data: { revokedAt: new Date() },
-        }),
-      );
+          data: { revokedAt: now },
+        });
 
-      // Increment tokenVersion so all access tokens become invalid.
-      txOps.push(
-        this.prisma.user.update({
+        // 3b) Increment tokenVersion so all access tokens become invalid.
+        await tx.user.update({
           where: { id: user.id },
           data: { tokenVersion: { increment: 1 } },
-        }),
-      );
-    }
+        });
+      }
 
-    // Revoke any other active challenges for the same user.
-    txOps.push(
-      this.prisma.passwordRecoveryChallenge.updateMany({
+      // 4) Revoke any other active challenges for the same user.
+      await tx.passwordRecoveryChallenge.updateMany({
         where: {
           userId: user.id,
           purpose: PASSWORD_RECOVERY_PURPOSES.PASSWORD_RESET,
@@ -151,11 +187,9 @@ export class ResetPasswordWithTokenUseCase {
           consumedAt: null,
           id: { not: challenge.id },
         },
-        data: { revokedAt: new Date() },
-      }),
-    );
-
-    await this.prisma.$transaction(txOps);
+        data: { revokedAt: now },
+      });
+    });
 
     this.logger.log(`Password reset completed for user ${user.id}`);
 

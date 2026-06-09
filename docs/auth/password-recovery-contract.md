@@ -1,6 +1,6 @@
 # Password Recovery Contract
 
-## Phase 4-R2 — Configurable Password Recovery Foundation
+## Phases 4-R2 + 4-R3 — Configurable Password Recovery Foundation & Hardening
 
 ---
 
@@ -15,6 +15,12 @@ All state is server-side; clients never receive anything that lets them
 short-circuit the flow. OTPs and reset session tokens are HMAC-hashed
 before they are stored, and the raw values are never written to the
 database.
+
+Phase 4-R3 hardened the subsystem: the reset-password transaction is
+now fully atomic, unknown-email cooldowns are enforced via a marker
+challenge, the `devReturnOtp` field flows through the controller, and
+production boot guards refuse CONSOLE/NOOP channels when recovery is
+enabled.
 
 ---
 
@@ -43,8 +49,8 @@ Content-Type: application/json
 { "email": "alice@example.com" }
 ```
 
-Successful response (always the same, regardless of whether the email
-exists):
+Successful response (always the same in production, regardless of
+whether the email exists):
 
 ```json
 {
@@ -54,9 +60,11 @@ exists):
 
 Status: `200 OK`.
 
-In development only, when `PASSWORD_RECOVERY_DEV_RETURN_OTP=true`, the
-response body additionally contains an `otp` field. The production
-boot guard refuses to start when this flag is `true`.
+In non-production environments only, when
+`PASSWORD_RECOVERY_DEV_RETURN_OTP=true`, the response body
+additionally contains an `otp` field so integration tests can pick it
+up. The production boot guard refuses to start the app when this flag
+is `true`.
 
 ### 3.2 Verify the OTP
 
@@ -79,7 +87,7 @@ Successful response:
 Status: `200 OK`.
 
 Failure response (any reason — wrong code, expired, too many attempts,
-unknown email, malformed payload):
+unknown email, marker challenge, malformed payload):
 
 ```json
 { "message": "Invalid or expired verification code." }
@@ -107,8 +115,8 @@ Successful response:
 
 Status: `200 OK`.
 
-Failure response (any reason — invalid token, expired, consumed, user
-not active, etc.):
+Failure response (any reason — invalid token, expired, consumed,
+marker, user not active, etc.):
 
 ```json
 { "message": "Invalid or expired reset token." }
@@ -120,7 +128,14 @@ Status: `401 Unauthorized`.
 
 ## 4. Server-Side State Machine
 
-Each recovery attempt is recorded as a `PasswordRecoveryChallenge` row:
+Each recovery attempt is recorded as a `PasswordRecoveryChallenge`
+row. There are two kinds of rows:
+
+- **Real challenge** — `isMarker=false`, has a real user, an `otpHash`,
+  and a `otpExpiresAt`. Created for known emails.
+- **Marker challenge** — `isMarker=true`, `userId=null`, no `otpHash`,
+  no `otpExpiresAt`. Created for unknown emails as a cooldown / timing
+  placeholder.
 
 ```
                     ┌───────────────────────┐
@@ -131,34 +146,38 @@ Each recovery attempt is recorded as a `PasswordRecoveryChallenge` row:
                     │  failedAttempts = 0   │
                     └──────────┬────────────┘
                                │ request-password-recovery
-                               ▼
-                    ┌───────────────────────┐
-                    │  OTP issued           │
-                    │  otpHash set          │
-                    │  otpExpiresAt set      │
-                    └──────────┬────────────┘
+                  known email  │  unknown email
+                  ─────────────┼──────────────
+                               ▼                              ▼
+                    ┌───────────────────────┐    ┌───────────────────────┐
+                    │  Real challenge       │    │  Marker challenge     │
+                    │  isMarker = false     │    │  isMarker = true      │
+                    │  userId set           │    │  userId = null        │
+                    │  otpHash set          │    │  otpHash = null       │
+                    │  otpExpiresAt set     │    │  otpExpiresAt = null  │
+                    │  channel dispatched   │    │  no dispatch          │
+                    └──────────┬────────────┘    └──────────┬────────────┘
                                │ verify-password-recovery-otp
                   correct      │      wrong
                   ─────────────┼──────────────
-                               ▼
+                               ▼                              ▼
                     ┌───────────────────────┐  ┌────────────────────┐
                     │  otpVerifiedAt set    │  │  failedAttempts++  │
                     │  resetTokenHash set   │  │  if >= max:        │
                     │  resetTokenExpiresAt  │  │    revokedAt = now │
                     └──────────┬────────────┘  └────────────────────┘
                                │ reset-password
-                  consumed     │
-                  ─────────────┼──────────────
+                  consumed (atomic) │
+                  ──────────────────┼──────────────────
                                ▼
-                    ┌───────────────────────┐
-                    │  consumedAt = now     │
-                    │  password updated     │
-                    │  tokenVersion += 1    │
-                    │  all refresh tokens   │
-                    │    for user revoked   │
-                    │  other active         │
-                    │    challenges revoked │
-                    └───────────────────────┘
+                    ┌───────────────────────────────────────┐
+                    │  consumedAt = now                     │
+                    │  password updated                     │
+                    │  tokenVersion += 1                    │
+                    │  all refresh tokens for user revoked  │
+                    │  other active challenges revoked      │
+                    │  ALL in a single Prisma transaction   │
+                    └───────────────────────────────────────┘
 ```
 
 ---
@@ -179,37 +198,43 @@ enum PasswordRecoveryChannel {
 }
 
 model PasswordRecoveryChallenge {
-  id                   String                  @id @default(cuid())
-  purpose              PasswordRecoveryPurpose @default(PASSWORD_RESET)
-  userId               String?                 // null when the email is unknown
-  user                 User?                   @relation(...)
-  emailHash            String                  // HMAC-SHA256 of normalized email
-  channel              PasswordRecoveryChannel // which channel the OTP was sent to
+  id                  String                  @id @default(uuid())
+  userId              String?                 // null for marker challenges
+  user                User?                   @relation(...)
+  emailHash           String                  // HMAC-SHA256 of normalized email
+  purpose             PasswordRecoveryPurpose @default(PASSWORD_RESET)
+  channel             PasswordRecoveryChannel @default(NOOP)
 
-  // OTP — stored as HMAC of `<challengeId>:<otp>`. Never the raw OTP.
-  otpHash              String?
-  otpExpiresAt         DateTime?
-  otpVerifiedAt        DateTime?
+  // OTP — null for marker challenges.
+  otpHash             String?
+  otpExpiresAt        DateTime?
+  otpVerifiedAt       DateTime?
 
-  // Reset session token — stored as HMAC of `<challengeId>.<secret>`.
-  resetTokenHash       String?
-  resetTokenExpiresAt  DateTime?
+  // Reset session token — HMAC of `<challengeId>.<secret>`. Never the raw token.
+  resetTokenHash      String?
+  resetTokenExpiresAt DateTime?
 
   // Lifecycle
-  failedAttempts       Int                     @default(0)
-  maxAttempts          Int
-  revokedAt            DateTime?
-  consumedAt           DateTime?
+  failedAttempts      Int                     @default(0)
+  maxAttempts         Int                     @default(5)
+  revokedAt           DateTime?
+  consumedAt          DateTime?
+
+  // Cooldown placeholder flag. When true, the row exists only to
+  // occupy the emailHash slot for cooldown and timing-balance purposes.
+  // Marker challenges have no OTP and can never be verified or consumed.
+  isMarker            Boolean                 @default(false)
 
   // Audit context
-  requestIp            String?
-  userAgent            String?
+  requestIp           String?
+  userAgent           String?
 
-  createdAt            DateTime                @default(now())
-  updatedAt            DateTime                @updatedAt
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
 
   @@index([userId, purpose, revokedAt, consumedAt])
   @@index([emailHash, purpose, createdAt])
+  @@index([emailHash, purpose, isMarker, createdAt])
   @@index([createdAt])
 }
 ```
@@ -227,6 +252,10 @@ model PasswordRecoveryChallenge {
   different challenge.
 - The raw reset session token secret is **never** stored. The server
   stores `HMAC-SHA256(serverPepper, "<challengeId>.<secret>")`.
+- Marker challenges have `otpHash=null`, `otpExpiresAt=null`,
+  `userId=null`, and `isMarker=true`. The verify and reset use-cases
+  filter out markers, so they can never produce a reset session token
+  or be consumed.
 
 ---
 
@@ -243,11 +272,15 @@ All hashing uses Node's built-in `crypto` module.
 
 **Pepper (`PASSWORD_RECOVERY_PEPPER`):**
 
-- Must be at least 16 characters in production.
-- Must not be any of the well-known defaults (`change-me-in-production`,
-  `changeme`, `pepper`, `secret`, `default`).
-- The boot guard refuses to start the application in production if
-  these conditions are violated.
+- When `PASSWORD_RECOVERY_ENABLED=true` in production: must be at
+  least 16 characters and must not be any of the well-known defaults
+  (`change-me-in-production`, `changeme`, `pepper`, `secret`,
+  `default`, empty string).
+- When `PASSWORD_RECOVERY_ENABLED=false` in production: the strict
+  validation is relaxed (a weak pepper only emits a warning) because
+  the pepper is not used in that case.
+- The boot guard refuses to start the application if the strict
+  validation fails.
 - The pepper is never logged and never returned in any response.
 
 **OTP generation:**
@@ -291,12 +324,20 @@ All values are read from environment variables, exposed at
 
 **Production boot guards:**
 
-- `PASSWORD_RECOVERY_PEPPER` must not be a weak default and must be
-  ≥ 16 characters.
-- `PASSWORD_RECOVERY_DEV_RETURN_OTP` must be `false`.
-- `PASSWORD_RECOVERY_CHANNEL` set to `CONSOLE` or `NOOP` in production
-  emits a warning but does not abort boot (some companies intentionally
-  disable delivery in production while keeping the API surface).
+- `PASSWORD_RECOVERY_DEV_RETURN_OTP=true` is always rejected in
+  production, regardless of `PASSWORD_RECOVERY_ENABLED`.
+- When `PASSWORD_RECOVERY_ENABLED=true` in production:
+  - `PASSWORD_RECOVERY_PEPPER` must be a strong, non-default value
+    of at least 16 characters.
+  - `PASSWORD_RECOVERY_CHANNEL` must NOT be `CONSOLE` or `NOOP`.
+    Recovery in production requires a real delivery channel
+    (`EMAIL`, `WHATSAPP`, or `SMS`).
+- When `PASSWORD_RECOVERY_ENABLED=false` in production: the strict
+  pepper validation is relaxed; a weak pepper only emits a warning.
+  This is because the pepper is not used when recovery is disabled.
+
+For local development, a committed `.env.example` ships with safe
+defaults and inline comments explaining each variable.
 
 ---
 
@@ -307,27 +348,33 @@ All values are read from environment variables, exposed at
 The public response to `POST /auth/forgot-password` is identical
 regardless of whether the email exists. Internally:
 
-- For known emails: a challenge is created, an OTP is generated, and
-  the configured channel is invoked.
-- For unknown emails: a no-op is performed; the channel is not invoked
-  and no challenge is created.
+- For known emails: a real challenge is created, an OTP is generated,
+  and the configured channel is invoked.
+- For unknown emails: a marker challenge is created
+  (`isMarker=true`, `userId=null`, no OTP), the channel is not
+  invoked, and no OTP is generated.
 
 The "verify" endpoint also returns the same generic error for unknown
-emails, expired challenges, wrong OTPs, and locked-out challenges.
+emails, expired challenges, wrong OTPs, locked-out challenges, and
+marker challenges.
 
-The response timing is not currently normalized, which is an accepted
-tradeoff for Phase 4-R2 (a future hardening pass can add a constant-time
-short-circuit for the unknown-email branch).
+The response body in production never contains the OTP. In non-
+production with `PASSWORD_RECOVERY_DEV_RETURN_OTP=true`, the response
+additionally includes an `otp` field for testing.
 
-### 8.2 Cooldown
+### 8.2 Cooldown (works for both known and unknown emails)
 
 `PASSWORD_RECOVERY_RESEND_COOLDOWN_SECONDS` is enforced **per
-`emailHash`**. When a new request arrives within the cooldown window
-of the previous one, the new request is silently dropped (no error,
+`emailHash`**. The cooldown check uses
+`findLatestByEmail`, which includes both real and marker challenges.
+When a new request arrives within the cooldown window of the previous
+one, the new request is silently dropped (no error, no new challenge,
 no delivery) so the response is identical to a normal request.
 
-The cooldown is enforced for both known and unknown emails, so an
-attacker cannot bypass the rate limit by probing random addresses.
+This is implemented as a `PasswordRecoveryChallenge` row whose
+`createdAt` timestamp anchors the cooldown. Real challenges and
+marker challenges both anchor cooldown equally, so an attacker
+cannot bypass the rate limit by probing random addresses.
 
 ### 8.3 Max failed attempts
 
@@ -335,29 +382,47 @@ attacker cannot bypass the rate limit by probing random addresses.
 per challenge. When exceeded, the challenge is revoked and any further
 attempt against it returns the generic invalid-code error.
 
-The increment is performed with an atomic `updateMany` so concurrent
-attempts cannot race past the cap.
+The increment is performed inside an interactive transaction that
+also handles the "should revoke?" decision, so concurrent attempts
+cannot race past the cap. Marker challenges are excluded from this
+mechanism (their `failedAttempts` stays at 0 and `incrementFailedAttempts`
+is a no-op for them).
 
-### 8.4 One-time-use reset token
+### 8.4 One-time-use reset token (atomic with side effects)
 
-The reset session token is bound to the challenge. After a successful
-`POST /auth/reset-password`:
+The reset session token is bound to the challenge. The reset-password
+use-case now performs **all** side effects inside a single Prisma
+interactive transaction:
 
-- `consumedAt` is set via a conditional `updateMany` with
-  `consumedAt: null, revokedAt: null` guards. A double-submit cannot
-  apply the password change twice.
-- The token cannot be replayed even if the same secret were re-leaked
-  later, because the `consumedAt` guard rejects it.
+1. **Conditionally mark the challenge as consumed** (one-time-use
+   guard). The conditional `updateMany` includes guards for
+   `isMarker=false`, `revokedAt=null`, `consumedAt=null`,
+   `otpVerifiedAt!=null`, `resetTokenHash!=null`,
+   `resetTokenExpiresAt>now`, and `userId=<expected user>`. If the
+   count is 0, the use-case throws `UnauthorizedException` and the
+   transaction is rolled back.
+2. Update the user `passwordHash`.
+3. If `PASSWORD_RECOVERY_REVOKE_SESSIONS_ON_SUCCESS=true`:
+   - Revoke all `RefreshToken` rows for the user (`revokedAt = now`).
+   - Increment `user.tokenVersion` by 1.
+4. Revoke every other active `PasswordRecoveryChallenge` for the same
+   user (`revokedAt = now`).
+
+If any step inside the transaction throws, Prisma rolls back the
+entire group. The challenge is not consumed, the password is not
+updated, refresh tokens are not revoked, and `tokenVersion` is not
+incremented. This eliminates the previous hazard where
+`markConsumed()` ran outside the transaction and could leave the
+system in an inconsistent state.
 
 ### 8.5 Session invalidation on reset
 
 When `PASSWORD_RECOVERY_REVOKE_SESSIONS_ON_SUCCESS=true` (default), a
-successful password reset runs the following inside a single Prisma
-transaction:
+successful password reset runs the following inside the same
+transaction as the password update:
 
-1. `user.passwordHash` is updated to the new hash.
-2. All `RefreshToken` rows for the user are revoked
-   (`revokedAt = now()`).
+1. `user.passwordHash` is updated.
+2. All `RefreshToken` rows for the user are revoked.
 3. `user.tokenVersion` is incremented by 1.
 
 The `tokenVersion` increment is what invalidates the user's access
@@ -379,9 +444,14 @@ through the public auth surface.
 
 ### 8.8 Channel in production
 
-`CONSOLE` and `NOOP` channels in production only write to the server
-log / nothing. They never attempt network calls. A warning is emitted
-at boot if either is configured in production.
+When `PASSWORD_RECOVERY_ENABLED=true` in production, the boot guard
+**rejects** `CONSOLE` and `NOOP` channels outright. The
+implementation rationale is that recovery is on, and a delivery
+channel that cannot reach a real user is a footgun, not a feature.
+
+When `PASSWORD_RECOVERY_ENABLED=false` in production, `CONSOLE` and
+`NOOP` are accepted (the feature is off, so the channel is never
+used).
 
 ### 8.9 Generic error for disabled feature
 
@@ -390,6 +460,26 @@ When `PASSWORD_RECOVERY_ENABLED=false`, all three endpoints return
 `"Password recovery is not available"`. This deliberately does not
 differentiate from other client errors to avoid advertising the
 existence of the feature.
+
+### 8.10 Request IP and User-Agent capture
+
+The `forgot-password` controller extracts the client IP and User-
+Agent from the incoming Express request and passes them to the
+use-case, which stores them on the challenge row. This is useful for
+forensics and rate-limiting, and matches the `requestIp` / `userAgent`
+columns on `PasswordRecoveryChallenge`. Both fields are optional; the
+use-case falls back to `null` when the request has no IP/UA.
+
+### 8.11 devReturnOtp behavior
+
+- When `PASSWORD_RECOVERY_DEV_RETURN_OTP=true` AND the environment
+  is not production: the forgot-password response includes an
+  additional `otp` field with the raw OTP. This is for integration
+  tests only.
+- When `PASSWORD_RECOVERY_DEV_RETURN_OTP=true` AND the environment
+  is production: the boot guard refuses to start the application.
+- When `PASSWORD_RECOVERY_DEV_RETURN_OTP=false`: the response never
+  contains the OTP.
 
 ---
 
@@ -417,6 +507,13 @@ channel.
   stdout, masking the destination email
   (`a***@example.com`). Refuses to log when `isProduction=true` to
   avoid accidentally printing OTPs in production logs.
+
+**No real email, WhatsApp, or SMS provider is shipped with this
+starter.** The `EMAIL` / `WHATSAPP` / `SMS` enum values exist to
+anchor the type system, but `resolveChannel` returns `null` for
+them, so an `EMAIL` channel in production currently logs a warning
+and silently drops the OTP. Production deployments that need a real
+channel must implement one.
 
 ---
 
@@ -466,3 +563,15 @@ module.
 - [RBAC Guards Contract](../rbac/rbac-guards-contract.md) — explains
   the default-deny posture and the role of `@Public()`. All three
   password-recovery endpoints are classified `@Public()`.
+- [.env.example](../../.env.example) — committed template with safe
+  dev defaults and inline comments for every `PASSWORD_RECOVERY_*`
+  variable.
+
+---
+
+## 12. Version History
+
+| Version | Date       | Phase    | Changes                                                                          |
+| ------- | ---------- | -------- | -------------------------------------------------------------------------------- |
+| 1.1.0   | 2026-06-09 | 4-R3     | Atomic reset transaction; unknown-email markers; controller devOtp + IP/UA pass; production channel hardening; .env.example |
+| 1.0.0   | 2026-06-09 | 4-R2     | Initial PasswordRecoveryChallenge model, 3 use-cases, 2 channels, env config    |
