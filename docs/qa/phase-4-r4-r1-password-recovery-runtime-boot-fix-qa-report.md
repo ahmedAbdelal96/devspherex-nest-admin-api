@@ -839,3 +839,21 @@ respected:
 - ✅ Only Phase 4-R4-R1 changes are committed (single
   commit, message
   `fix(auth): remove password recovery readiness DI cycle`).
+
+---
+
+## R5 Addendum — Runtime Boot Stability Fix (2026-06-09)
+
+Phase 4-R5 was subsequently required to fix a Prisma 7 boot blocker that
+prevented the application from starting after Phase 4-R4-R1. See
+[phase-4-r5-runtime-boot-stability-fix-qa-report.md](phase-4-r5-runtime-boot-stability-fix-qa-report.md)
+for the full R5 QA report. Summary of the R5 fix:
+
+| Item | Detail |
+|---|---|
+| **Error fixed** | `PrismaClientInitializationError: PrismaClient needs to be constructed with a non-empty, valid PrismaClientOptions` |
+| **Root cause** | Prisma 7 "client" engine requires a driver adapter for direct PostgreSQL connections; `super()` with no args is rejected |
+| **Fix applied** | Added `@prisma/adapter-pg` package; updated `PrismaService` constructor to use `PrismaPg` adapter backed by `pg.Pool` |
+| **Files changed** | `src/common/database/prisma.service.ts`, `package.json`, `package-lock.json` |
+| **Boot result** | ✅ `Nest application successfully started +94ms` — all modules initialized, all routes mapped |
+| **Regression** | None — R4-R1 DI cycle fix (`AppConfigModule +16ms`) remains intact |
