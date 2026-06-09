@@ -3,10 +3,10 @@ import {
   Get,
   Param,
   Query,
-  UseGuards,
   ParseUUIDPipe,
 } from '@nestjs/common';
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { Permissions } from '../../common/rbac';
+import { SYSTEM_PERMISSION_KEYS } from '../../common/rbac';
 import {
   ListPermissionsQueryDto,
   ListPermissionsResponseDto,
@@ -19,7 +19,6 @@ import {
 } from './use-cases';
 
 @Controller('permissions')
-@UseGuards(JwtAuthGuard)
 export class PermissionsController {
   constructor(
     private readonly listPermissionsUseCase: ListPermissionsUseCase,
@@ -28,16 +27,19 @@ export class PermissionsController {
   ) {}
 
   @Get()
+  @Permissions(SYSTEM_PERMISSION_KEYS.PERMISSIONS.READ)
   async list(@Query() query: ListPermissionsQueryDto): Promise<ListPermissionsResponseDto> {
     return this.listPermissionsUseCase.execute(query);
   }
 
   @Get('grouped')
+  @Permissions(SYSTEM_PERMISSION_KEYS.PERMISSIONS.GROUPED_READ)
   async listGrouped(): Promise<ListGroupedPermissionsResponseDto> {
     return this.listGroupedPermissionsUseCase.execute();
   }
 
   @Get(':id')
+  @Permissions(SYSTEM_PERMISSION_KEYS.PERMISSIONS.READ)
   async getById(@Param('id', ParseUUIDPipe) id: string) {
     return this.getPermissionByIdUseCase.execute(id);
   }

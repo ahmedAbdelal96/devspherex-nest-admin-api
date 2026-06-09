@@ -4,17 +4,15 @@ import {
   Post,
   Body,
   Query,
-  UseGuards,
-  ParseUUIDPipe,
- HttpCode,
+  HttpCode,
   HttpStatus,
 } from '@nestjs/common';
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { Permissions } from '../../common/rbac';
+import { SYSTEM_PERMISSION_KEYS } from '../../common/rbac';
 import { ListAuditLogsQueryDto, ListAuditLogsResponseDto, CreateAuditLogDto } from './dto';
 import { ListAuditLogsUseCase, CreateAuditLogUseCase } from './use-cases';
 
 @Controller('audit-logs')
-@UseGuards(JwtAuthGuard)
 export class AuditLogsController {
   constructor(
     private readonly listAuditLogsUseCase: ListAuditLogsUseCase,
@@ -22,12 +20,14 @@ export class AuditLogsController {
   ) {}
 
   @Get()
+  @Permissions(SYSTEM_PERMISSION_KEYS.AUDIT_LOGS.READ)
   async list(@Query() query: ListAuditLogsQueryDto): Promise<ListAuditLogsResponseDto> {
     return this.listAuditLogsUseCase.execute(query);
   }
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
+  @Permissions(SYSTEM_PERMISSION_KEYS.AUDIT_LOGS.CREATE)
   async create(@Body() dto: CreateAuditLogDto) {
     return this.createAuditLogUseCase.execute(dto);
   }

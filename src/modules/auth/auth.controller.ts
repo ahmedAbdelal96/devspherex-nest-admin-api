@@ -3,11 +3,10 @@ import {
   Post,
   Body,
   Get,
-  UseGuards,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { Public, Authenticated } from '../../common/rbac';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import {
   RegisterDto,
@@ -46,19 +45,21 @@ export class AuthController {
     private readonly resetPasswordUseCase: ResetPasswordUseCase,
   ) {}
 
+  @Public()
   @Post('register')
   async register(@Body() dto: RegisterDto): Promise<AuthResponseDto> {
     return this.registerUseCase.execute(dto);
   }
 
+  @Public()
   @Post('login')
   @HttpCode(HttpStatus.OK)
   async login(@Body() dto: LoginDto): Promise<AuthResponseDto> {
     return this.loginUseCase.execute(dto);
   }
 
+  @Authenticated()
   @Post('logout')
-  @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
   async logout(
     @CurrentUser('id') userId: string,
@@ -68,28 +69,29 @@ export class AuthController {
     return { message: 'Logged out successfully' };
   }
 
+  @Authenticated()
   @Post('logout-all')
-  @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
   async logoutAll(@CurrentUser('id') userId: string): Promise<{ message: string }> {
     await this.logoutAllUseCase.execute(userId);
     return { message: 'Logged out from all devices successfully' };
   }
 
+  @Public()
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
   async refresh(@Body() dto: RefreshTokenDto): Promise<RefreshTokenResponseDto> {
     return this.refreshTokenUseCase.execute(dto.refreshToken);
   }
 
+  @Authenticated()
   @Get('me')
-  @UseGuards(JwtAuthGuard)
   async getMe(@CurrentUser('id') userId: string) {
     return this.getMeUseCase.execute(userId);
   }
 
+  @Authenticated()
   @Post('change-password')
-  @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
   async changePassword(
     @CurrentUser('id') userId: string,
@@ -99,12 +101,14 @@ export class AuthController {
     return { message: 'Password changed successfully' };
   }
 
+  @Public()
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
   async forgotPassword(@Body() dto: ForgotPasswordDto): Promise<{ message: string }> {
     return this.forgotPasswordUseCase.execute(dto.email);
   }
 
+  @Public()
   @Post('reset-password')
   @HttpCode(HttpStatus.OK)
   async resetPassword(@Body() dto: ResetPasswordDto): Promise<{ message: string }> {

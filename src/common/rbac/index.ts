@@ -8,6 +8,8 @@
  * import { SYSTEM_PERMISSIONS } from '@common/rbac/system-permissions';
  */
 
+import type { SystemPermissionKey } from './system-permissions';
+
 // Types
 export type {
   PermissionAction,
@@ -19,8 +21,9 @@ export type {
   SystemPermissionsValidationResult,
 } from './permission.types';
 
-// Re-export the key type (derived from SYSTEM_PERMISSION_KEYS)
 export type { SystemPermissionKey } from './system-permissions';
+
+export type { PermissionMode, RequiredPermissionsMetadata, AuthenticatedRouteMetadata } from './rbac.types';
 
 // System Permissions
 export {
@@ -49,3 +52,22 @@ export {
   filterByAction,
   searchPermissions,
 } from './permission.utils';
+
+// RBAC Constants
+export {
+  IS_PUBLIC_KEY,
+  IS_AUTHENTICATED_KEY,
+  REQUIRED_PERMISSIONS_KEY,
+  PERMISSION_MODE_KEY,
+} from './rbac.constants';
+
+// Decorators
+export { Public } from './decorators/public.decorator';
+export { Authenticated } from './decorators/authenticated.decorator';
+export { Permissions, AnyPermissions } from './decorators/permissions.decorator';
+
+// Guards
+export { PermissionsGuard } from './guards/permissions.guard';
+
+// Services
+export { EffectivePermissionsService } from './services/effective-permissions.service';

@@ -7,12 +7,12 @@ import {
   Body,
   Param,
   Query,
-  UseGuards,
   HttpCode,
   HttpStatus,
   ParseUUIDPipe,
 } from '@nestjs/common';
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { Permissions } from '../../common/rbac';
+import { SYSTEM_PERMISSION_KEYS } from '../../common/rbac';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import {
   CreateUserDto,
@@ -37,7 +37,6 @@ import {
 } from './use-cases';
 
 @Controller('users')
-@UseGuards(JwtAuthGuard)
 export class UsersController {
   constructor(
     private readonly createUserUseCase: CreateUserUseCase,
@@ -52,21 +51,25 @@ export class UsersController {
   ) {}
 
   @Post()
+  @Permissions(SYSTEM_PERMISSION_KEYS.USERS.CREATE)
   async create(@Body() dto: CreateUserDto): Promise<CreateUserResponseDto> {
     return this.createUserUseCase.execute(dto);
   }
 
   @Get()
+  @Permissions(SYSTEM_PERMISSION_KEYS.USERS.READ)
   async list(@Query() query: ListUsersQueryDto): Promise<PaginatedUsersResponseDto> {
     return this.listUsersUseCase.execute(query);
   }
 
   @Get(':id')
+  @Permissions(SYSTEM_PERMISSION_KEYS.USERS.READ)
   async getById(@Param('id', ParseUUIDPipe) id: string) {
     return this.getUserByIdUseCase.execute(id);
   }
 
   @Put(':id')
+  @Permissions(SYSTEM_PERMISSION_KEYS.USERS.UPDATE)
   async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateUserDto,
@@ -76,6 +79,7 @@ export class UsersController {
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @Permissions(SYSTEM_PERMISSION_KEYS.USERS.DELETE)
   async delete(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser('id') currentUserId: string,
@@ -84,6 +88,7 @@ export class UsersController {
   }
 
   @Put(':id/status')
+  @Permissions(SYSTEM_PERMISSION_KEYS.USERS.STATUS_UPDATE)
   async updateStatus(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateUserStatusDto,
@@ -93,6 +98,7 @@ export class UsersController {
   }
 
   @Put(':id/role')
+  @Permissions(SYSTEM_PERMISSION_KEYS.USERS.ROLE_UPDATE)
   async updateRole(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateUserRoleDto,
@@ -102,11 +108,13 @@ export class UsersController {
   }
 
   @Get(':id/effective-permissions')
+  @Permissions(SYSTEM_PERMISSION_KEYS.USERS.PERMISSIONS_READ)
   async getEffectivePermissions(@Param('id', ParseUUIDPipe) id: string) {
     return this.getUserEffectivePermissionsUseCase.execute(id);
   }
 
   @Put(':id/permission-overrides')
+  @Permissions(SYSTEM_PERMISSION_KEYS.USERS.PERMISSIONS_OVERRIDE)
   async updatePermissionOverrides(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateUserPermissionOverridesDto,

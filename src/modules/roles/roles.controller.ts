@@ -7,12 +7,12 @@ import {
   Body,
   Param,
   Query,
-  UseGuards,
   HttpCode,
   HttpStatus,
   ParseUUIDPipe,
 } from '@nestjs/common';
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { Permissions } from '../../common/rbac';
+import { SYSTEM_PERMISSION_KEYS } from '../../common/rbac';
 import {
   CreateRoleDto,
   ListRolesQueryDto,
@@ -33,7 +33,6 @@ import {
 } from './use-cases';
 
 @Controller('roles')
-@UseGuards(JwtAuthGuard)
 export class RolesController {
   constructor(
     private readonly createRoleUseCase: CreateRoleUseCase,
@@ -46,21 +45,25 @@ export class RolesController {
   ) {}
 
   @Post()
+  @Permissions(SYSTEM_PERMISSION_KEYS.ROLES.CREATE)
   async create(@Body() dto: CreateRoleDto): Promise<CreateRoleResponseDto> {
     return this.createRoleUseCase.execute(dto);
   }
 
   @Get()
+  @Permissions(SYSTEM_PERMISSION_KEYS.ROLES.READ)
   async list(@Query() query: ListRolesQueryDto): Promise<PaginatedRolesResponseDto> {
     return this.listRolesUseCase.execute(query);
   }
 
   @Get(':id')
+  @Permissions(SYSTEM_PERMISSION_KEYS.ROLES.READ)
   async getById(@Param('id', ParseUUIDPipe) id: string) {
     return this.getRoleByIdUseCase.execute(id);
   }
 
   @Put(':id')
+  @Permissions(SYSTEM_PERMISSION_KEYS.ROLES.UPDATE)
   async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateRoleDto,
@@ -70,11 +73,13 @@ export class RolesController {
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @Permissions(SYSTEM_PERMISSION_KEYS.ROLES.DELETE)
   async delete(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
     await this.deleteRoleUseCase.execute(id);
   }
 
   @Put(':id/permissions')
+  @Permissions(SYSTEM_PERMISSION_KEYS.ROLES.PERMISSIONS_UPDATE)
   async updatePermissions(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateRolePermissionsDto,
@@ -83,6 +88,7 @@ export class RolesController {
   }
 
   @Post(':id/duplicate')
+  @Permissions(SYSTEM_PERMISSION_KEYS.ROLES.DUPLICATE)
   async duplicate(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: DuplicateRoleDto,
