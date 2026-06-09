@@ -29,8 +29,18 @@ export class LogoutUseCase {
       throw new UnauthorizedException('Token does not belong to user');
     }
 
+    // Reject if already revoked
+    if (storedToken.revokedAt) {
+      throw new UnauthorizedException('Refresh token has been revoked');
+    }
+
+    // Reject if expired
+    if (new Date() > storedToken.expiresAt) {
+      throw new UnauthorizedException('Refresh token has expired');
+    }
+
     // Verify the raw token against stored hash
-    const isValid = this.refreshTokenService.verifyRefreshToken(
+    const isValid = await this.refreshTokenService.verifyRefreshTokenAsync(
       rawRefreshToken,
       storedToken.tokenHash,
     );

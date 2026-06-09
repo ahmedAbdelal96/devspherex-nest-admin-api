@@ -24,6 +24,7 @@ import {
   RegisterUseCase,
   LoginUseCase,
   LogoutUseCase,
+  LogoutAllUseCase,
   RefreshTokenUseCase,
   GetMeUseCase,
   ChangePasswordUseCase,
@@ -37,6 +38,7 @@ export class AuthController {
     private readonly registerUseCase: RegisterUseCase,
     private readonly loginUseCase: LoginUseCase,
     private readonly logoutUseCase: LogoutUseCase,
+    private readonly logoutAllUseCase: LogoutAllUseCase,
     private readonly refreshTokenUseCase: RefreshTokenUseCase,
     private readonly getMeUseCase: GetMeUseCase,
     private readonly changePasswordUseCase: ChangePasswordUseCase,
@@ -64,6 +66,14 @@ export class AuthController {
   ): Promise<{ message: string }> {
     await this.logoutUseCase.execute(userId, dto.refreshToken);
     return { message: 'Logged out successfully' };
+  }
+
+  @Post('logout-all')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async logoutAll(@CurrentUser('id') userId: string): Promise<{ message: string }> {
+    await this.logoutAllUseCase.execute(userId);
+    return { message: 'Logged out from all devices successfully' };
   }
 
   @Post('refresh')

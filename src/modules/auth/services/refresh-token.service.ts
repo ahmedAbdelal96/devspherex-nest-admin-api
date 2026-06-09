@@ -19,18 +19,18 @@ export class RefreshTokenService {
    * - jti: unique token ID for lookup
    * - secret: 64 random hex characters
    */
-  generateRefreshTokenPayload(): {
+  async generateRefreshTokenPayloadAsync(): Promise<{
     rawToken: string;
     jti: string;
     familyId: string;
     tokenHash: string;
     expiresAt: Date;
-  } {
+  }> {
     const jti = randomUUID();
     const familyId = randomUUID();
     const secret = randomBytes(32).toString('hex'); // 64 hex chars
     const rawToken = `${jti}.${secret}`;
-    const tokenHash = bcrypt.hashSync(rawToken, this.HASH_ROUNDS);
+    const tokenHash = await bcrypt.hash(rawToken, this.HASH_ROUNDS);
     const expiresAt = this.getRefreshTokenExpiry();
 
     return {
@@ -57,9 +57,9 @@ export class RefreshTokenService {
   /**
    * Verify a raw refresh token against a stored hash.
    */
-  verifyRefreshToken(rawToken: string, tokenHash: string): boolean {
+  async verifyRefreshTokenAsync(rawToken: string, tokenHash: string): Promise<boolean> {
     try {
-      return bcrypt.compareSync(rawToken, tokenHash);
+      return await bcrypt.compare(rawToken, tokenHash);
     } catch {
       return false;
     }

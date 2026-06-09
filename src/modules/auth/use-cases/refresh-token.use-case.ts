@@ -36,7 +36,7 @@ export class RefreshTokenUseCase {
     }
 
     // Verify the raw token against the stored hash
-    const isValid = this.refreshTokenService.verifyRefreshToken(
+    const isValid = await this.refreshTokenService.verifyRefreshTokenAsync(
       rawRefreshToken,
       storedToken.tokenHash,
     );

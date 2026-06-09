@@ -70,20 +70,20 @@ Only the hash is stored in the database:
 
 ```typescript
 interface RefreshTokenService {
-  // Generate a new refresh token payload
-  generateRefreshTokenPayload(): {
+  // Generate a new refresh token payload (async)
+  generateRefreshTokenPayloadAsync(): Promise<{
     rawToken: string;      // Sent to client
     jti: string;
     familyId: string;
     tokenHash: string;     // Stored in DB
     expiresAt: Date;
-  };
+  }>;
 
   // Extract jti from raw token
   extractJti(rawToken: string): string | null;
 
-  // Verify raw token against stored hash
-  verifyRefreshToken(rawToken: string, tokenHash: string): boolean;
+  // Verify raw token against stored hash (async)
+  verifyRefreshTokenAsync(rawToken: string, tokenHash: string): Promise<boolean>;
 
   // Get expiry date for refresh tokens
   getRefreshTokenExpiry(): Date;
@@ -136,10 +136,14 @@ interface RefreshTokenService {
 
 **Behavior:**
 1. Extract `jti` from refresh token
-2. Verify token ownership (jti belongs to user)
-3. Verify token hash matches
-4. Revoke refresh token in DB
-5. Increment `user.tokenVersion` to invalidate access tokens
+2. Find token by `jti`
+3. Reject if token not found
+4. Verify token ownership (jti belongs to user)
+5. Reject if token already revoked (`revokedAt !== null`)
+6. Reject if token expired (`expiresAt < now`)
+7. Verify token hash matches
+8. Revoke refresh token in DB
+9. Increment `user.tokenVersion` to invalidate access tokens
 
 **Response:** `{ "message": "Logged out successfully" }`
 
@@ -230,6 +234,7 @@ This ensures:
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.1.0 | 2026-06-09 | R1: Added logout-all, tightened logout validation |
 | 1.0.0 | 2026-06-09 | Initial Phase 3 implementation |
 
 ---
@@ -245,6 +250,8 @@ This ensures:
 | Only hash stored in DB | ✅ |
 | Raw token returned to client | ✅ |
 | Logout invalidates tokens | ✅ |
+| Logout rejects revoked/expired tokens | ✅ |
 | Logout-all invalidates tokens | ✅ |
 | Change-password invalidates tokens | ✅ |
 | Disable user invalidates tokens | ✅ |
+| Async hash/verify methods | ✅ |

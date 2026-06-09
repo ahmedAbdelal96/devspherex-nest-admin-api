@@ -52,7 +52,7 @@ export class LoginUseCase {
 
     // Generate refresh token payload (returns raw token + hash for storage)
     const { rawToken, jti, familyId, tokenHash, expiresAt } =
-      this.refreshTokenService.generateRefreshTokenPayload();
+      await this.refreshTokenService.generateRefreshTokenPayloadAsync();
 
     // Store hash in database, NOT the raw token
     await this.refreshTokensRepository.create({
