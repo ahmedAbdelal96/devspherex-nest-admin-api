@@ -5,9 +5,33 @@
  * Adding a new provider (Email / WhatsApp / SMS) only requires:
  *   1. Implementing PasswordRecoveryChannelProvider.
  *   2. Registering it as a provider here and adding the mapping below.
+ *   3. Updating the readiness tables (`isChannelImplemented` /
+ *      `isChannelProductionReady`) below.
  *
  * No use-case ever imports a specific channel — they only depend on this
  * service, which keeps the use-cases channel-agnostic.
+ *
+ * Phase 4-R4 — Provider Readiness Metadata
+ * -----------------------------------------
+ * The service now exposes two readiness predicates:
+ *
+ *   - `isChannelImplemented(channel)` — does this channel have a real
+ *     `PasswordRecoveryChannelProvider` registered? (CONSOLE and NOOP are
+ *     implemented; EMAIL/WHATSAPP/SMS are not in this starter.)
+ *
+ *   - `isChannelProductionReady(channel)` — is this channel safe to use
+ *     in a live deployment that is actually expected to deliver OTPs to
+ *     real users? (No channel in this starter is production-ready, because
+ *     no real vendor integration is implemented. CONSOLE writes to the
+ *     server log only, NOOP discards, and EMAIL/WHATSAPP/SMS have no
+ *     provider.)
+ *
+ * The boot guard in `PasswordRecoveryConfig` uses
+ * `isChannelProductionReady` to refuse to start a production deployment
+ * that has `PASSWORD_RECOVERY_ENABLED=true` without a real provider. This
+ * is the R4 fix for the previous footgun where EMAIL/WHATSAPP/SMS could
+ * be configured in production and `resolveChannel` would silently
+ * return `null`, dropping the OTP.
  */
 
 import { Injectable, Logger } from '@nestjs/common';
@@ -39,12 +63,18 @@ export class PasswordRecoveryChannelService {
   async sendOtp(payload: PasswordRecoveryChannelPayload): Promise<void> {
     const channel = this.resolveChannel(this.config.channel);
     if (!channel) {
-      // No provider registered for the configured channel; do not error out
-      // the request — just skip delivery. The generic public response will
-      // still be returned.
+      // No provider registered for the configured channel. We log a
+      // warning so operators can see this in non-production, but we do
+      // NOT raise the error into the public response.
+      //
+      // The boot guard in `PasswordRecoveryConfig` already refused to
+      // start the app in production with a non-implemented channel, so
+      // reaching this branch in production is impossible. The warning
+      // is for non-production environments that want to test the flow
+      // without a real provider.
       this.logger.warn(
         `No provider registered for PASSWORD_RECOVERY_CHANNEL=${this.config.channel}. ` +
-          `Skipping OTP delivery.`,
+          `OTP delivery is skipped. This is only acceptable in non-production environments.`,
       );
       return;
     }
@@ -61,6 +91,38 @@ export class PasswordRecoveryChannelService {
     }
   }
 
+  /**
+   * Returns true when the channel has a registered
+   * `PasswordRecoveryChannelProvider` in this build.
+   */
+  isChannelImplemented(channel: PasswordRecoveryChannel): boolean {
+    switch (channel) {
+      case PASSWORD_RECOVERY_CHANNELS.NOOP:
+      case PASSWORD_RECOVERY_CHANNELS.CONSOLE:
+        return true;
+      case PASSWORD_RECOVERY_CHANNELS.EMAIL:
+      case PASSWORD_RECOVERY_CHANNELS.WHATSAPP:
+      case PASSWORD_RECOVERY_CHANNELS.SMS:
+      default:
+        return false;
+    }
+  }
+
+  /**
+   * Returns true when the channel is safe to use in a live deployment
+   * that needs to actually deliver OTPs to real users.
+   *
+   * Phase 4-R4 baseline: NO channel in this starter is production-ready.
+   * A real provider must be implemented (and this method updated) before
+   * the channel can return `true`.
+   */
+  isChannelProductionReady(_channel: PasswordRecoveryChannel): boolean {
+    // No vendor is wired up in this starter. Update this method when
+    // a real provider is added — e.g., return true for EMAIL once
+    // a SMTP / SES channel is implemented and registered.
+    return false;
+  }
+
   private resolveChannel(
     channel: PasswordRecoveryChannel,
   ): PasswordRecoveryChannelProvider | null {
@@ -72,8 +134,11 @@ export class PasswordRecoveryChannelService {
       case PASSWORD_RECOVERY_CHANNELS.EMAIL:
       case PASSWORD_RECOVERY_CHANNELS.WHATSAPP:
       case PASSWORD_RECOVERY_CHANNELS.SMS:
-        // Real providers are intentionally not implemented in this phase.
-        // When one is added, register it in the constructor and add the case here.
+        // Real providers are intentionally not implemented in this
+        // starter. The boot guard in PasswordRecoveryConfig refuses to
+        // start the app in production with a non-production-ready
+        // channel. In non-production this still returns null, but
+        // sendOtp() logs a clear warning and skips delivery.
         return null;
       default:
         return null;

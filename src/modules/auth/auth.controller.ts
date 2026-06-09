@@ -114,7 +114,7 @@ export class AuthController {
   async forgotPassword(
     @Body() dto: RequestPasswordRecoveryDto,
     @Req() req: Request,
-  ): Promise<{ message: string; otp?: string }> {
+  ): Promise<{ message: string; devOtp?: string }> {
     const requestIp =
       (req.ip as string | undefined) ??
       (req.socket as { remoteAddress?: string } | undefined)?.remoteAddress;
@@ -123,10 +123,16 @@ export class AuthController {
       ? userAgentRaw[0]
       : (userAgentRaw as string | undefined);
 
-    // The use-case returns the exact response: in production it is
-    // always the generic message. In non-production with
-    // PASSWORD_RECOVERY_DEV_RETURN_OTP=true it additionally includes
-    // `otp` so integration tests can pick it up.
+    // The use-case returns the exact response. The response shape is:
+    //   { message: string, devOtp?: string }
+    //
+    // `devOtp` is included ONLY when:
+    //   - NODE_ENV/app.env is not production, AND
+    //   - PASSWORD_RECOVERY_DEV_RETURN_OTP=true, AND
+    //   - a real OTP was actually generated (known email, not in cooldown).
+    //
+    // The use-case never includes `devOtp` in production, never for
+    // unknown-email markers, and never when cooldown blocks a new OTP.
     return this.requestPasswordRecoveryUseCase.execute(dto.email, {
       requestIp,
       userAgent,

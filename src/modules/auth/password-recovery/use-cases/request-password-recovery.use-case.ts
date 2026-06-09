@@ -22,19 +22,23 @@
  *         isMarker=true, otpHash=null). The marker has no OTP, so it
  *         can never be verified or consumed; it only occupies the
  *         emailHash slot so the cooldown applies uniformly.
- *   - Timing on the unknown-email path is balanced with the known-email
- *     path: the use-case always performs the same number of database
- *     round-trips (revoke, create, optional channel dispatch). The
- *     channel dispatch is the only asymmetric cost and is currently
- *     a no-op (the placeholder channel call is included for future
- *     providers to plug in without timing changes).
- *   - Dev-only `devOtp` field is included in the response only when
- *     `PASSWORD_RECOVERY_DEV_RETURN_OTP=true` and the environment is
- *     not production. The production boot guard refuses to start the
- *     app when this flag is true.
+ *   - The dev-only `devOtp` field is included in the response ONLY when
+ *     `PASSWORD_RECOVERY_DEV_RETURN_OTP=true` AND the environment is not
+ *     production AND a real OTP was actually generated (i.e. a known
+ *     user triggered the flow and we were not in cooldown). It is never
+ *     present in production, never present for unknown-email markers,
+ *     and never present when the cooldown blocked a new OTP.
+ *   - Optional timing floor:
+ *     `PASSWORD_RECOVERY_MIN_RESPONSE_MS` (default 0 = disabled) is
+ *     applied on every code path of this use-case. The handler records
+ *     the start time and sleeps for the remaining duration before
+ *     returning. This narrows the observable timing gap between the
+ *     known-email and unknown-email branches. The default is 0 so
+ *     that operators opt-in only when they have measured a need.
  */
 
 import { Injectable, Logger } from '@nestjs/common';
+import { setTimeout as delay } from 'timers/promises';
 import { PrismaService } from '../../../../common/database/prisma.service';
 import { PasswordRecoveryConfig } from '../password-recovery.config';
 import { PasswordRecoveryHashingService } from '../services/password-recovery-hashing.service';
@@ -55,6 +59,21 @@ export interface RequestPasswordRecoveryContext {
   userAgent?: string;
 }
 
+/**
+ * Public response shape returned by this use-case.
+ *
+ * The `devOtp` field is opt-in and only present in non-production
+ * environments when:
+ *   - `PASSWORD_RECOVERY_DEV_RETURN_OTP=true`, AND
+ *   - a real challenge was actually created for a known email
+ *     (i.e. cooldown did not block the request, and the email maps
+ *     to a real user).
+ */
+export interface RequestPasswordRecoveryResult {
+  message: string;
+  devOtp?: string;
+}
+
 @Injectable()
 export class RequestPasswordRecoveryUseCase {
   private readonly logger = new Logger(RequestPasswordRecoveryUseCase.name);
@@ -72,7 +91,20 @@ export class RequestPasswordRecoveryUseCase {
   async execute(
     rawEmail: string,
     context: RequestPasswordRecoveryContext = {},
-  ): Promise<{ message: string; devOtp?: string }> {
+  ): Promise<RequestPasswordRecoveryResult> {
+    const startedAt = Date.now();
+    try {
+      return await this.run(rawEmail, context, startedAt);
+    } finally {
+      await this.applyMinResponseFloor(startedAt);
+    }
+  }
+
+  private async run(
+    rawEmail: string,
+    context: RequestPasswordRecoveryContext,
+    _startedAt: number,
+  ): Promise<RequestPasswordRecoveryResult> {
     if (!this.config.enabled) {
       this.logger.warn('Password recovery request received but feature is disabled');
       return { message: PASSWORD_RECOVERY_DISABLED_MESSAGE };
@@ -94,6 +126,9 @@ export class RequestPasswordRecoveryUseCase {
       this.logger.debug(
         `Password recovery cooldown active for emailHash prefix=${emailHash.slice(0, 8)}...`,
       );
+      // `devOtp` is intentionally NOT included here: no real OTP was
+      // generated, and exposing it would defeat the cooldown protection
+      // against brute-force attempts.
       return { message: PASSWORD_RECOVERY_GENERIC_MESSAGE };
     }
 
@@ -128,6 +163,8 @@ export class RequestPasswordRecoveryUseCase {
       this.logger.debug(
         `Password recovery marker created for unknown email hash prefix=${emailHash.slice(0, 8)}...`,
       );
+      // `devOtp` is intentionally NOT included for unknown emails: no
+      // real OTP was generated.
       return { message: PASSWORD_RECOVERY_GENERIC_MESSAGE };
     }
 
@@ -167,7 +204,7 @@ export class RequestPasswordRecoveryUseCase {
       expiresInSeconds: this.config.otpTtlSeconds,
     });
 
-    const response: { message: string; devOtp?: string } = {
+    const response: RequestPasswordRecoveryResult = {
       message: PASSWORD_RECOVERY_GENERIC_MESSAGE,
     };
     if (!this.config.isProduction && this.config.devReturnOtp) {
@@ -178,5 +215,28 @@ export class RequestPasswordRecoveryUseCase {
       response.devOtp = otp;
     }
     return response;
+  }
+
+  /**
+   * Apply the optional minimum-response-time floor.
+   *
+   * This is best-effort: a `setTimeout` is not a hard real-time
+   * guarantee, but it does narrow the observable timing gap between
+   * the known-email and unknown-email branches of this use-case.
+   *
+   * The floor is applied to EVERY code path (disabled, cooldown,
+   * unknown marker, known email, channel failure) so callers cannot
+   * infer which branch ran from the response time alone.
+   */
+  private async applyMinResponseFloor(startedAt: number): Promise<void> {
+    const minMs = this.config.minResponseMs;
+    if (minMs <= 0) return;
+    const elapsed = Date.now() - startedAt;
+    if (elapsed >= minMs) return;
+    const remaining = minMs - elapsed;
+    // `timers/promises` gives us a typed, lint-friendly `setTimeout`
+    // that returns a Promise. It does not block the event loop in a
+    // way that prevents other concurrent work from being scheduled.
+    await delay(remaining);
   }
 }

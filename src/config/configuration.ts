@@ -25,6 +25,14 @@ export const passwordRecoveryConfig = registerAs('passwordRecovery', () => ({
     process.env.PASSWORD_RECOVERY_REVOKE_SESSIONS_ON_SUCCESS,
     true,
   ),
+  // Optional minimum response time for the forgot-password use-case, in
+  // milliseconds. 0 (default) disables the floor. Set to e.g. 300-800
+  // to flatten timing differences between the known-email and
+  // unknown-email branches. Range: 0..5000.
+  minResponseMs: parseInt(
+    process.env.PASSWORD_RECOVERY_MIN_RESPONSE_MS || '0',
+    10,
+  ),
   // Server-side pepper. Must be ≥16 chars in production (validated at boot).
   pepper:
     process.env.PASSWORD_RECOVERY_PEPPER ||

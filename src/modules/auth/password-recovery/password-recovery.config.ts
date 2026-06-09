@@ -5,10 +5,15 @@
  * validates them at module construction time. Rejects unsafe configurations
  * in production:
  *   - When PASSWORD_RECOVERY_ENABLED=true:
- *     * PASSWORD_RECOVERY_CHANNEL must NOT be CONSOLE or NOOP
- *     * PASSWORD_RECOVERY_PEPPER must not be a weak default and ≥16 chars
+ *     * PASSWORD_RECOVERY_CHANNEL must be a production-ready channel
+ *       (currently none; see `PasswordRecoveryChannelService.isChannelProductionReady`).
+ *     * PASSWORD_RECOVERY_PEPPER must not be a weak default and ≥16 chars.
  *   - Always in production:
- *     * PASSWORD_RECOVERY_DEV_RETURN_OTP must be false
+ *     * PASSWORD_RECOVERY_DEV_RETURN_OTP must be false.
+ *
+ * Until a real EMAIL / WHATSAPP / SMS provider is implemented and the
+ * `isChannelProductionReady` predicate is updated, the only way to
+ * run a production deployment is `PASSWORD_RECOVERY_ENABLED=false`.
  *
  * All env variables are read from the `passwordRecovery` namespace:
  *   PASSWORD_RECOVERY_ENABLED
@@ -21,6 +26,7 @@
  *   PASSWORD_RECOVERY_REVOKE_SESSIONS_ON_SUCCESS
  *   PASSWORD_RECOVERY_PEPPER
  *   PASSWORD_RECOVERY_DEV_RETURN_OTP
+ *   PASSWORD_RECOVERY_MIN_RESPONSE_MS
  */
 
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
@@ -35,7 +41,10 @@ import {
   PASSWORD_RECOVERY_DEFAULT_RESET_TOKEN_TTL_SECONDS,
   PASSWORD_RECOVERY_DEFAULT_RESEND_COOLDOWN_SECONDS,
   PASSWORD_RECOVERY_DEFAULT_MAX_VERIFY_ATTEMPTS,
+  PASSWORD_RECOVERY_DEFAULT_MIN_RESPONSE_MS,
+  PASSWORD_RECOVERY_MAX_MIN_RESPONSE_MS,
 } from './password-recovery.constants';
+import { PasswordRecoveryChannelService } from './services/password-recovery-channel.service';
 
 const WEAK_PEPPER_VALUES = new Set<string>([
   'change-me-in-production',
@@ -60,9 +69,13 @@ export class PasswordRecoveryConfig {
   readonly revokeSessionsOnSuccess: boolean;
   readonly pepper: string;
   readonly devReturnOtp: boolean;
+  readonly minResponseMs: number;
   readonly nodeEnv: string;
 
-  constructor(configService: ConfigService) {
+  constructor(
+    configService: ConfigService,
+    channelService: PasswordRecoveryChannelService,
+  ) {
     this.nodeEnv = (
       configService.get<string>('app.env') ||
       process.env.NODE_ENV ||
@@ -134,7 +147,15 @@ export class PasswordRecoveryConfig {
       false,
     );
 
-    this.validateProductionSafety();
+    this.minResponseMs = this.parseIntInRange(
+      configService.get<string>('passwordRecovery.minResponseMs'),
+      PASSWORD_RECOVERY_DEFAULT_MIN_RESPONSE_MS,
+      0,
+      PASSWORD_RECOVERY_MAX_MIN_RESPONSE_MS,
+      'PASSWORD_RECOVERY_MIN_RESPONSE_MS',
+    );
+
+    this.validateProductionSafety(channelService);
     this.logSafeSummary();
   }
 
@@ -193,23 +214,39 @@ export class PasswordRecoveryConfig {
     return value as PasswordRecoveryChannel;
   }
 
-  private validateProductionSafety(): void {
+  private validateProductionSafety(
+    channelService: PasswordRecoveryChannelService,
+  ): void {
     if (!this.isProduction) {
       return;
     }
 
     if (this.enabled) {
-      // When recovery is enabled in production, the configured channel MUST
-      // be capable of reaching real users. CONSOLE writes to the server
-      // log only, and NOOP discards entirely — neither is acceptable for
-      // live deployments.
-      if (
-        this.channel === PASSWORD_RECOVERY_CHANNELS.CONSOLE ||
-        this.channel === PASSWORD_RECOVERY_CHANNELS.NOOP
-      ) {
+      // When recovery is enabled in production, the configured channel
+      // MUST be production-ready — i.e., must have a real provider that
+      // can actually deliver OTPs to real users.
+      //
+      // The readiness check is delegated to
+      // `PasswordRecoveryChannelService.isChannelProductionReady`, which
+      // is the single source of truth for "is this channel actually
+      // implemented as a working provider?". It returns `false` for
+      // CONSOLE (writes to the server log), NOOP (discards), and
+      // EMAIL/WHATSAPP/SMS (no real provider in this starter).
+      //
+      // Until a real provider is implemented and the predicate is
+      // updated, the only safe production posture is
+      // `PASSWORD_RECOVERY_ENABLED=false`.
+      if (!channelService.isChannelImplemented(this.channel)) {
         throw new BadRequestException(
-          `PASSWORD_RECOVERY_CHANNEL=${this.channel} is not allowed in production while PASSWORD_RECOVERY_ENABLED=true. ` +
-            `Set PASSWORD_RECOVERY_ENABLED=false, or implement a real provider (EMAIL/WHATSAPP/SMS) and configure the channel accordingly.`,
+          `PASSWORD_RECOVERY_CHANNEL=${this.channel} is not implemented in this build. ` +
+            `No provider is registered for this channel. ` +
+            `Set PASSWORD_RECOVERY_ENABLED=false, or implement a real provider and register it in PasswordRecoveryChannelService.`,
+        );
+      }
+      if (!channelService.isChannelProductionReady(this.channel)) {
+        throw new BadRequestException(
+          `PASSWORD_RECOVERY_CHANNEL=${this.channel} is implemented but NOT production-ready. ` +
+            `Set PASSWORD_RECOVERY_ENABLED=false, or implement a real production provider and update isChannelProductionReady.`,
         );
       }
 

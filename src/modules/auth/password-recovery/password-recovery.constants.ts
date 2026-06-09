@@ -20,6 +20,21 @@ export const PASSWORD_RECOVERY_DEFAULT_RESEND_COOLDOWN_SECONDS = 60;
 /** Default maximum failed verification attempts. */
 export const PASSWORD_RECOVERY_DEFAULT_MAX_VERIFY_ATTEMPTS = 5;
 
+/**
+ * Default minimum response time for the forgot-password use-case, in
+ * milliseconds. 0 means no floor — the request returns as fast as the
+ * work allows. Operators can raise this to flatten timing differences
+ * between the known-email and unknown-email branches.
+ */
+export const PASSWORD_RECOVERY_DEFAULT_MIN_RESPONSE_MS = 0;
+
+/**
+ * Hard upper bound for `PASSWORD_RECOVERY_MIN_RESPONSE_MS`. Anything
+ * above this is rejected at boot because a multi-second artificial
+ * delay on a public auth endpoint is almost certainly a misconfig.
+ */
+export const PASSWORD_RECOVERY_MAX_MIN_RESPONSE_MS = 5_000;
+
 /** Bytes of entropy for the reset session token secret (32 bytes => 64 hex chars). */
 export const PASSWORD_RECOVERY_RESET_TOKEN_SECRET_BYTES = 32;
 

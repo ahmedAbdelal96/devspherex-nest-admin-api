@@ -528,3 +528,99 @@ in a defensible state: the public contract is honest, the side
 effects are atomic, the production guards are strict, and the
 dev experience (`.env.example`) is friendly. Further hardening
 is incremental from here.
+
+---
+
+## 13. Phase 4-R4 Addendum — Provider Readiness & Contract Cleanup
+
+> Status: appended 2026-06-09. Phase 4-R4 is a
+> **contract-cleanup + production-readiness** pass, not a behavior
+> change in the success path. It does not regress any R3 fix. The
+> full R4 QA report lives at
+> `docs/qa/phase-4-r4-password-recovery-provider-readiness-contract-cleanup-qa-report.md`.
+> This addendum is a pointer plus a brief delta summary so that the
+> R3 report remains a complete artifact for its phase.
+
+### 13.1 What changed between R3 and R4
+
+1. **Provider readiness metadata.** R4 introduces two predicates
+   on `PasswordRecoveryChannelService`:
+   - `isChannelImplemented(channel)` — `true` for `NOOP` /
+     `CONSOLE`, `false` for `EMAIL` / `WHATSAPP` / `SMS` in this
+     starter.
+   - `isChannelProductionReady(channel)` — `false` for **every**
+     channel in this starter. A real provider must be implemented
+     before this can return `true`.
+2. **Production boot guard re-statement.** R4 makes the production
+   boot guard explicit about the difference between "implemented"
+   and "production-ready". In production, with
+   `PASSWORD_RECOVERY_ENABLED=true`:
+   - Not implemented (e.g. `EMAIL`) — boot refuses.
+   - Implemented but not production-ready (e.g. `CONSOLE`, `NOOP`)
+     — boot refuses.
+   - Production-ready — boot allows.
+   Until a real provider is added, the only safe production
+   posture is `PASSWORD_RECOVERY_ENABLED=false`. This is an
+   evolution, not a relaxation, of the R3 guard. R3 already
+   refused `CONSOLE` / `NOOP` in production; R4 makes the
+   rejection explicit via the readiness predicate and adds a
+   matching check for "not implemented" channels.
+3. **Unified `devOtp` field name.** R4 unifies the dev-OTP field
+   name to `devOtp` in the use-case result type, the controller
+   return type, and the contract. R3 introduced the field but the
+   use-case never had an exported type, so the field name was
+   implicit. R4 makes the name part of the public contract.
+4. **Optional timing floor.** R4 adds
+   `PASSWORD_RECOVERY_MIN_RESPONSE_MS` (default `0` = disabled).
+   When set to a positive value, the forgot-password use-case
+   records the start time and sleeps for the remaining duration
+   in a `finally` block, applied to every code path (disabled,
+   cooldown, unknown marker, known email, channel failure). R4
+   also rewrites the timing section of the contract to be honest
+   about what the floor guarantees (defensive best-effort) and
+   what it does not (hard constant-time).
+5. **`.env.example` updates.** R4 adds the new
+   `PASSWORD_RECOVERY_MIN_RESPONSE_MS` variable and updates the
+   comments around the channel and `devOtp` to reflect the R4
+   contract.
+6. **Contract documentation refresh.** R4 bumps the contract
+   version to 1.2.0 and rewrites the timing section to be
+   honest about what the floor guarantees and what it does not.
+
+### 13.2 R3 invariants preserved by R4
+
+R4 was carefully scoped to avoid regressing any R3 fix. The
+following invariants are verified to still hold after R4:
+
+- The reset transaction in `ResetPasswordWithTokenUseCase` is
+  still a single Prisma interactive transaction. The conditional
+  `markConsumed` is still inside the transaction. Password
+  update, refresh-token revocation, `tokenVersion` increment, and
+  other-challenge revocation are still inside the same
+  transaction. A failure inside the transaction still rolls
+  back the whole group.
+- The unknown-email marker is still created before the cooldown
+  anchor so a same-email follow-up still sees a challenge row.
+  The marker is still `isMarker=true`, `userId=null`, with no
+  `otpHash`. The verify and reset use-cases still filter out
+  markers via `findLatestActiveByEmail` /
+  `findActiveByResetTokenHash`, so a marker can never be
+  verified or consumed.
+- The controller still passes `requestIp` and `userAgent` to the
+  use-case. The use-case still stores them on the challenge row.
+  Both fields are still optional; the use-case still falls back
+  to `null` when the request has no IP/UA.
+- The `request-password-recovery` response body is still
+  identical for known and unknown emails, and for cooldown-blocked
+  requests. The only difference is the addition of `devOtp` for
+  the dev-only path.
+
+### 13.3 Cross-reference
+
+- R4 QA report:
+  [phase-4-r4-password-recovery-provider-readiness-contract-cleanup-qa-report.md](phase-4-r4-password-recovery-provider-readiness-contract-cleanup-qa-report.md)
+- Contract:
+  [../auth/password-recovery-contract.md](../auth/password-recovery-contract.md)
+  (version 1.2.0)
+- `.env.example`:
+  [../../.env.example](../../.env.example)
