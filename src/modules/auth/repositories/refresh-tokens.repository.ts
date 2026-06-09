@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../common/database/prisma.service';
-import { RefreshToken } from '@prisma/client';
+import { RefreshToken, User } from '@prisma/client';
 
 @Injectable()
 export class RefreshTokensRepository {
@@ -24,7 +24,7 @@ export class RefreshTokensRepository {
     });
   }
 
-  async findValidToken(jti: string): Promise<RefreshToken | null> {
+  async findValidByJti(jti: string): Promise<RefreshToken | null> {
     return this.prisma.refreshToken.findFirst({
       where: {
         jti,
@@ -41,6 +41,13 @@ export class RefreshTokensRepository {
         revokedAt: new Date(),
         replacedByTokenId,
       },
+    });
+  }
+
+  async revokeByJti(jti: string): Promise<void> {
+    await this.prisma.refreshToken.updateMany({
+      where: { jti },
+      data: { revokedAt: new Date() },
     });
   }
 
@@ -63,6 +70,12 @@ export class RefreshTokensRepository {
   async findById(id: string): Promise<RefreshToken | null> {
     return this.prisma.refreshToken.findUnique({
       where: { id },
+    });
+  }
+
+  async findUserById(userId: string): Promise<User | null> {
+    return this.prisma.user.findUnique({
+      where: { id: userId },
     });
   }
 }

@@ -34,9 +34,23 @@ export class ChangePasswordUseCase {
 
     const newPasswordHash = await this.passwordService.hashPassword(dto.newPassword);
 
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: { passwordHash: newPasswordHash },
-    });
+    // Use transaction to update password, revoke tokens, and increment tokenVersion
+    await this.prisma.$transaction([
+      // Update password hash
+      this.prisma.user.update({
+        where: { id: userId },
+        data: { passwordHash: newPasswordHash },
+      }),
+      // Revoke all refresh tokens using prisma directly
+      this.prisma.refreshToken.updateMany({
+        where: { userId },
+        data: { revokedAt: new Date() },
+      }),
+      // Increment tokenVersion to invalidate existing access tokens
+      this.prisma.user.update({
+        where: { id: userId },
+        data: { tokenVersion: { increment: 1 } },
+      }),
+    ]);
   }
 }

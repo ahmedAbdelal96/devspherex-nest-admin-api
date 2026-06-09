@@ -23,6 +23,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: JwtPayload) {
+    // Validate tokenVersion is present
+    if (typeof payload.tokenVersion !== 'number') {
+      throw new UnauthorizedException('Invalid token: missing tokenVersion');
+    }
+
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
       include: {
@@ -38,8 +43,17 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       },
     });
 
-    if (!user || user.status !== 'ACTIVE') {
-      throw new UnauthorizedException('User not found or inactive');
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    if (user.status !== 'ACTIVE') {
+      throw new UnauthorizedException('User account is not active');
+    }
+
+    // Validate tokenVersion matches
+    if (payload.tokenVersion !== user.tokenVersion) {
+      throw new UnauthorizedException('Token has been invalidated');
     }
 
     return {

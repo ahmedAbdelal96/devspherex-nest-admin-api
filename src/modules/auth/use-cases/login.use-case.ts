@@ -1,5 +1,4 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../../../common/database/prisma.service';
 import { PasswordService } from '../services/password.service';
 import { TokenService } from '../services/token.service';
@@ -43,6 +42,7 @@ export class LoginUseCase {
       throw new UnauthorizedException('User account is not active');
     }
 
+    // Generate access token with tokenVersion
     const accessToken = await this.tokenService.generateAccessToken({
       sub: user.id,
       email: user.email,
@@ -50,22 +50,23 @@ export class LoginUseCase {
       tokenVersion: user.tokenVersion,
     });
 
-    const refreshToken = await this.refreshTokenService.generateRefreshToken();
-    const expiresAt = this.refreshTokenService.getRefreshTokenExpiry();
-    const jti = randomUUID();
-    const familyId = randomUUID();
+    // Generate refresh token payload (returns raw token + hash for storage)
+    const { rawToken, jti, familyId, tokenHash, expiresAt } =
+      this.refreshTokenService.generateRefreshTokenPayload();
 
+    // Store hash in database, NOT the raw token
     await this.refreshTokensRepository.create({
-      tokenHash: refreshToken,
+      tokenHash,
       userId: user.id,
       jti,
       familyId,
       expiresAt,
     });
 
+    // Return raw token to client (NOT the hash)
     return {
       accessToken,
-      refreshToken,
+      refreshToken: rawToken,
       expiresIn: this.tokenService.getExpiresIn(),
       user: {
         id: user.id,

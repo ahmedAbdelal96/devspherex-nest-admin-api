@@ -16,6 +16,7 @@ import {
   ChangePasswordDto,
   ForgotPasswordDto,
   ResetPasswordDto,
+  LogoutDto,
   AuthResponseDto,
   RefreshTokenResponseDto,
 } from './dto';
@@ -55,9 +56,13 @@ export class AuthController {
   }
 
   @Post('logout')
+  @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
-  async logout(@Body() dto: RefreshTokenDto): Promise<{ message: string }> {
-    await this.logoutUseCase.execute(dto.refreshToken);
+  async logout(
+    @CurrentUser('id') userId: string,
+    @Body() dto: LogoutDto,
+  ): Promise<{ message: string }> {
+    await this.logoutUseCase.execute(userId, dto.refreshToken);
     return { message: 'Logged out successfully' };
   }
 

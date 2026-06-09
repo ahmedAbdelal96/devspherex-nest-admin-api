@@ -1,29 +1,73 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import * as bcrypt from 'bcryptjs';
-
-// TODO: In Phase 3, redesign refresh token security:
-// - Add jti (unique token ID) for token tracking
-// - Add familyId for token reuse detection
-// - Store tokenHash instead of raw token
-// - Implement refresh token rotation
 
 @Injectable()
 export class RefreshTokenService {
-  private readonly SALT_ROUNDS = 12;
+  private readonly HASH_ROUNDS = 12;
 
   constructor(private readonly configService: ConfigService) {}
 
-  async generateRefreshToken(): Promise<string> {
-    const token = randomUUID();
-    return bcrypt.hash(token, this.SALT_ROUNDS);
+  /**
+   * Generate a raw refresh token and its associated data.
+   * The raw token is sent to the client.
+   * Only the hash is stored in the database.
+   *
+   * Format: `${jti}.${secret}`
+   * - jti: unique token ID for lookup
+   * - secret: 64 random hex characters
+   */
+  generateRefreshTokenPayload(): {
+    rawToken: string;
+    jti: string;
+    familyId: string;
+    tokenHash: string;
+    expiresAt: Date;
+  } {
+    const jti = randomUUID();
+    const familyId = randomUUID();
+    const secret = randomBytes(32).toString('hex'); // 64 hex chars
+    const rawToken = `${jti}.${secret}`;
+    const tokenHash = bcrypt.hashSync(rawToken, this.HASH_ROUNDS);
+    const expiresAt = this.getRefreshTokenExpiry();
+
+    return {
+      rawToken,
+      jti,
+      familyId,
+      tokenHash,
+      expiresAt,
+    };
   }
 
-  async verifyRefreshToken(token: string, hashedToken: string): Promise<boolean> {
-    return bcrypt.compare(token, hashedToken);
+  /**
+   * Extract jti from a raw refresh token.
+   * Returns null if token format is invalid.
+   */
+  extractJti(rawToken: string): string | null {
+    const parts = rawToken.split('.');
+    if (parts.length !== 2) {
+      return null;
+    }
+    return parts[0]; // jti is the first part
   }
 
+  /**
+   * Verify a raw refresh token against a stored hash.
+   */
+  verifyRefreshToken(rawToken: string, tokenHash: string): boolean {
+    try {
+      return bcrypt.compareSync(rawToken, tokenHash);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Get the expiry date for refresh tokens.
+   */
   getRefreshTokenExpiry(): Date {
     const expiresIn = this.configService.get('jwt.refreshExpiresIn') as string;
     const match = expiresIn.match(/^(\d+)([mhd])$/);

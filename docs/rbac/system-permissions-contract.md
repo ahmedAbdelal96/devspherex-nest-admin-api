@@ -186,12 +186,13 @@ src/common/rbac/
 ├── index.ts                    # Public API exports
 ├── permission.types.ts         # TypeScript interfaces
 ├── system-permissions.ts       # Central source of truth (24 permissions)
-├── permission.utils.ts         # Utility functions
-└── system-permissions.spec.ts  # Tests (requires @types/jest)
+└── permission.utils.ts         # Utility functions
 
 scripts/
-└── validate-permissions.ts     # Validation script
+└── validate-permissions.ts     # Validation script (run with: npx ts-node scripts/validate-permissions.ts)
 ```
+
+**Note:** Test file not created due to missing `@types/jest`. Validation is done via the script above.
 
 ---
 
