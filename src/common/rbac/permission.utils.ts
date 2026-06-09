@@ -8,13 +8,10 @@
 import type {
   SystemPermissionDefinition,
   SystemPermissionGroup,
-  SystemPermissionKey,
 } from './permission.types';
 
 /**
  * Flatten permission groups into a single array of permissions
- * @param groups - Permission groups array
- * @returns Flat array of all permissions
  */
 export function flattenPermissionGroups(
   groups: SystemPermissionGroup[],
@@ -24,13 +21,10 @@ export function flattenPermissionGroups(
 
 /**
  * Create a Set of permission keys from an array of permissions
- * Useful for fast O(1) lookups
- * @param permissions - Array of permission definitions
- * @returns Set of permission keys
  */
 export function createPermissionKeySet(
   permissions: SystemPermissionDefinition[],
-): Set<SystemPermissionKey> {
+): Set<string> {
   return new Set(permissions.map((p) => p.key));
 }
 
@@ -126,17 +120,14 @@ export function groupPermissionsByGroup(
 }
 
 /**
- * Check if a permission key is valid (exists in the system)
- * @param key - Permission key to check
- * @param validKeys - Set or array of valid permission keys
- * @returns True if the key is valid
+ * Check if a permission key is valid
  */
 export function isValidPermissionKey(
   key: string,
-  validKeys: Set<SystemPermissionKey> | SystemPermissionKey[],
+  validKeys: Set<string> | string[],
 ): boolean {
   if (validKeys instanceof Set) {
-    return validKeys.has(key as SystemPermissionKey);
+    return validKeys.has(key);
   }
   return (validKeys as string[]).includes(key);
 }

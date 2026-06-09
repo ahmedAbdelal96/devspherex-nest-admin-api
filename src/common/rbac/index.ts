@@ -1,11 +1,10 @@
 /**
  * RBAC Module - Public API
  *
- * This is the public interface for the RBAC permission system.
  * Import from here for controllers, guards, decorators, seed scripts, and tests.
  *
  * Usage:
- * import { SYSTEM_PERMISSION_KEYS, getSystemPermissionByKey } from '@common/rbac';
+ * import { SYSTEM_PERMISSION_KEYS, SYSTEM_PERMISSION_KEY_LIST, getSystemPermissionByKey } from '@common/rbac';
  * import { SYSTEM_PERMISSIONS } from '@common/rbac/system-permissions';
  */
 
@@ -16,18 +15,20 @@ export type {
   PermissionGroupName,
   SystemPermissionDefinition,
   SystemPermissionGroup,
-  SystemPermissionKey,
-  SystemPermissionKeyRecord,
   ValidatedPermission,
   SystemPermissionsValidationResult,
 } from './permission.types';
 
-// System Permissions (source of truth)
+// Re-export the key type (derived from SYSTEM_PERMISSION_KEYS)
+export type { SystemPermissionKey } from './system-permissions';
+
+// System Permissions
 export {
+  SYSTEM_PERMISSION_KEYS,
+  SYSTEM_PERMISSION_KEY_LIST,
+  SYSTEM_PERMISSION_KEY_SET,
   SYSTEM_PERMISSION_GROUPS,
   SYSTEM_PERMISSIONS,
-  SYSTEM_PERMISSION_KEYS,
-  SYSTEM_PERMISSION_KEY_SET,
   getSystemPermissionByKey,
   getPermissionsByGroup,
   assertValidSystemPermissionKey,

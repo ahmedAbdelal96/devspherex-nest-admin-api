@@ -1,59 +1,91 @@
 /**
  * System Permissions - Central Source of Truth
  *
- * This file is the ONLY source of truth for all system permissions.
- * All controllers, guards, decorators, seed scripts, and tests must import
- * permission keys from here.
+ * Single source for all system permissions.
+ * Import keys from SYSTEM_PERMISSION_KEYS, definitions from SYSTEM_PERMISSIONS.
  *
- * PERMISSION NAMING RULES:
- * - Keys use dot notation: resource.action
- * - All lowercase
- * - Resource is singular: users, roles, permissions
- * - Actions follow consistent patterns: read, create, update, delete
- * - Compound actions use dot: permissions.update, status.update
- *
- * HOW TO USE:
- * import { SYSTEM_PERMISSION_KEYS, getSystemPermissionByKey } from './index';
- * import { SYSTEM_PERMISSIONS } from './system-permissions';
- *
- * // In decorators/guards:
- * @Permissions(SYSTEM_PERMISSION_KEYS.USERS.READ)
- *
- * // In seed scripts:
- * const permissionsToSeed = SYSTEM_PERMISSIONS;
- *
- * IMPORTANT:
- * - Do NOT hardcode permission strings like 'users.read' in other files
- * - Do NOT create permissions outside this file
- * - Do NOT import Prisma in this file
+ * Naming: lowercase dot notation, kebab-case for multi-word resources
+ * Example: users.read, audit-logs.read, api-request-logs.read
  */
 
 import type {
   SystemPermissionDefinition,
   SystemPermissionGroup,
-  SystemPermissionKey,
   SystemPermissionsValidationResult,
 } from './permission.types';
 
 // ============================================
-// PERMISSION GROUPS
+// NAMESPACED PERMISSION KEYS
 // ============================================
 
-/**
- * Auth / Account Permissions
- */
+export const SYSTEM_PERMISSION_KEYS = {
+  AUTH: {
+    ME_READ: 'auth.me.read',
+    PASSWORD_CHANGE: 'auth.password.change',
+  },
+  USERS: {
+    READ: 'users.read',
+    CREATE: 'users.create',
+    UPDATE: 'users.update',
+    DELETE: 'users.delete',
+    STATUS_UPDATE: 'users.status.update',
+    ROLE_UPDATE: 'users.role.update',
+    PERMISSIONS_READ: 'users.permissions.read',
+    PERMISSIONS_OVERRIDE: 'users.permissions.override',
+  },
+  ROLES: {
+    READ: 'roles.read',
+    CREATE: 'roles.create',
+    UPDATE: 'roles.update',
+    DELETE: 'roles.delete',
+    PERMISSIONS_UPDATE: 'roles.permissions.update',
+    DUPLICATE: 'roles.duplicate',
+  },
+  PERMISSIONS: {
+    READ: 'permissions.read',
+    GROUPED_READ: 'permissions.grouped.read',
+  },
+  AUDIT_LOGS: {
+    READ: 'audit-logs.read',
+    CREATE: 'audit-logs.create',
+  },
+  API_REQUEST_LOGS: {
+    READ: 'api-request-logs.read',
+  },
+  SYSTEM: {
+    HEALTH_READ: 'system.health.read',
+  },
+  SETTINGS: {
+    READ: 'settings.read',
+    UPDATE: 'settings.update',
+  },
+} as const;
+
+// ============================================
+// HELPER: Deep value of object
+// ============================================
+
+type ValueOf<T> = T[keyof T];
+type DeepValueOf<T> = T extends object ? DeepValueOf<ValueOf<T>> : T;
+
+export type SystemPermissionKey = DeepValueOf<typeof SYSTEM_PERMISSION_KEYS>;
+
+// ============================================
+// PERMISSION GROUPS (definitions)
+// ============================================
+
 const AUTH_PERMISSIONS: SystemPermissionDefinition[] = [
   {
-    key: 'auth.me.read',
+    key: SYSTEM_PERMISSION_KEYS.AUTH.ME_READ,
     resource: 'auth',
     action: 'read',
     label: 'View own account',
-    description: 'Allows viewing the current user profile and account details',
+    description: 'Allows viewing the current user profile',
     group: 'Auth',
     isSystem: true,
   },
   {
-    key: 'auth.password.change',
+    key: SYSTEM_PERMISSION_KEYS.AUTH.PASSWORD_CHANGE,
     resource: 'auth',
     action: 'password.change',
     label: 'Change password',
@@ -63,247 +95,50 @@ const AUTH_PERMISSIONS: SystemPermissionDefinition[] = [
   },
 ];
 
-/**
- * Users Management Permissions
- */
 const USERS_PERMISSIONS: SystemPermissionDefinition[] = [
-  {
-    key: 'users.read',
-    resource: 'users',
-    action: 'read',
-    label: 'View users',
-    description: 'Allows listing and viewing user accounts',
-    group: 'Users',
-    isSystem: true,
-  },
-  {
-    key: 'users.create',
-    resource: 'users',
-    action: 'create',
-    label: 'Create users',
-    description: 'Allows creating new user accounts',
-    group: 'Users',
-    isSystem: true,
-  },
-  {
-    key: 'users.update',
-    resource: 'users',
-    action: 'update',
-    label: 'Update users',
-    description: 'Allows updating user account details',
-    group: 'Users',
-    isSystem: true,
-  },
-  {
-    key: 'users.delete',
-    resource: 'users',
-    action: 'delete',
-    label: 'Delete users',
-    description: 'Allows deleting user accounts',
-    group: 'Users',
-    isSystem: true,
-  },
-  {
-    key: 'users.status.update',
-    resource: 'users',
-    action: 'status.update',
-    label: 'Update user status',
-    description: 'Allows enabling or disabling user accounts',
-    group: 'Users',
-    isSystem: true,
-  },
-  {
-    key: 'users.role.update',
-    resource: 'users',
-    action: 'role.update',
-    label: 'Update user role',
-    description: 'Allows assigning or changing user roles',
-    group: 'Users',
-    isSystem: true,
-  },
-  {
-    key: 'users.permissions.read',
-    resource: 'users',
-    action: 'permissions.read',
-    label: 'View user permissions',
-    description: 'Allows viewing effective permissions for a user',
-    group: 'Users',
-    isSystem: true,
-  },
-  {
-    key: 'users.permissions.override',
-    resource: 'users',
-    action: 'permissions.override',
-    label: 'Override user permissions',
-    description: 'Allows adding direct permission overrides (allow/deny) for a user',
-    group: 'Users',
-    isSystem: true,
-  },
+  { key: SYSTEM_PERMISSION_KEYS.USERS.READ, resource: 'users', action: 'read', label: 'View users', group: 'Users', isSystem: true },
+  { key: SYSTEM_PERMISSION_KEYS.USERS.CREATE, resource: 'users', action: 'create', label: 'Create users', group: 'Users', isSystem: true },
+  { key: SYSTEM_PERMISSION_KEYS.USERS.UPDATE, resource: 'users', action: 'update', label: 'Update users', group: 'Users', isSystem: true },
+  { key: SYSTEM_PERMISSION_KEYS.USERS.DELETE, resource: 'users', action: 'delete', label: 'Delete users', group: 'Users', isSystem: true },
+  { key: SYSTEM_PERMISSION_KEYS.USERS.STATUS_UPDATE, resource: 'users', action: 'status.update', label: 'Update user status', group: 'Users', isSystem: true },
+  { key: SYSTEM_PERMISSION_KEYS.USERS.ROLE_UPDATE, resource: 'users', action: 'role.update', label: 'Update user role', group: 'Users', isSystem: true },
+  { key: SYSTEM_PERMISSION_KEYS.USERS.PERMISSIONS_READ, resource: 'users', action: 'permissions.read', label: 'View user permissions', group: 'Users', isSystem: true },
+  { key: SYSTEM_PERMISSION_KEYS.USERS.PERMISSIONS_OVERRIDE, resource: 'users', action: 'permissions.override', label: 'Override user permissions', group: 'Users', isSystem: true },
 ];
 
-/**
- * Roles Management Permissions
- */
 const ROLES_PERMISSIONS: SystemPermissionDefinition[] = [
-  {
-    key: 'roles.read',
-    resource: 'roles',
-    action: 'read',
-    label: 'View roles',
-    description: 'Allows listing and viewing roles',
-    group: 'Roles',
-    isSystem: true,
-  },
-  {
-    key: 'roles.create',
-    resource: 'roles',
-    action: 'create',
-    label: 'Create roles',
-    description: 'Allows creating new roles',
-    group: 'Roles',
-    isSystem: true,
-  },
-  {
-    key: 'roles.update',
-    resource: 'roles',
-    action: 'update',
-    label: 'Update roles',
-    description: 'Allows updating role details',
-    group: 'Roles',
-    isSystem: true,
-  },
-  {
-    key: 'roles.delete',
-    resource: 'roles',
-    action: 'delete',
-    label: 'Delete roles',
-    description: 'Allows deleting roles',
-    group: 'Roles',
-    isSystem: true,
-  },
-  {
-    key: 'roles.permissions.update',
-    resource: 'roles',
-    action: 'permissions.update',
-    label: 'Update role permissions',
-    description: 'Allows assigning permissions to roles',
-    group: 'Roles',
-    isSystem: true,
-  },
-  {
-    key: 'roles.duplicate',
-    resource: 'roles',
-    action: 'duplicate',
-    label: 'Duplicate roles',
-    description: 'Allows duplicating existing roles with their permissions',
-    group: 'Roles',
-    isSystem: true,
-  },
+  { key: SYSTEM_PERMISSION_KEYS.ROLES.READ, resource: 'roles', action: 'read', label: 'View roles', group: 'Roles', isSystem: true },
+  { key: SYSTEM_PERMISSION_KEYS.ROLES.CREATE, resource: 'roles', action: 'create', label: 'Create roles', group: 'Roles', isSystem: true },
+  { key: SYSTEM_PERMISSION_KEYS.ROLES.UPDATE, resource: 'roles', action: 'update', label: 'Update roles', group: 'Roles', isSystem: true },
+  { key: SYSTEM_PERMISSION_KEYS.ROLES.DELETE, resource: 'roles', action: 'delete', label: 'Delete roles', group: 'Roles', isSystem: true },
+  { key: SYSTEM_PERMISSION_KEYS.ROLES.PERMISSIONS_UPDATE, resource: 'roles', action: 'permissions.update', label: 'Update role permissions', group: 'Roles', isSystem: true },
+  { key: SYSTEM_PERMISSION_KEYS.ROLES.DUPLICATE, resource: 'roles', action: 'duplicate', label: 'Duplicate roles', group: 'Roles', isSystem: true },
 ];
 
-/**
- * Permissions Management Permissions
- */
 const PERMISSIONS_PERMISSIONS: SystemPermissionDefinition[] = [
-  {
-    key: 'permissions.read',
-    resource: 'permissions',
-    action: 'read',
-    label: 'View permissions',
-    description: 'Allows listing and viewing all available permissions',
-    group: 'Permissions',
-    isSystem: true,
-  },
-  {
-    key: 'permissions.grouped.read',
-    resource: 'permissions',
-    action: 'grouped.read',
-    label: 'View grouped permissions',
-    description: 'Allows viewing permissions organized by group',
-    group: 'Permissions',
-    isSystem: true,
-  },
+  { key: SYSTEM_PERMISSION_KEYS.PERMISSIONS.READ, resource: 'permissions', action: 'read', label: 'View permissions', group: 'Permissions', isSystem: true },
+  { key: SYSTEM_PERMISSION_KEYS.PERMISSIONS.GROUPED_READ, resource: 'permissions', action: 'grouped.read', label: 'View grouped permissions', group: 'Permissions', isSystem: true },
 ];
 
-/**
- * Audit Logs Permissions
- */
 const AUDIT_LOGS_PERMISSIONS: SystemPermissionDefinition[] = [
-  {
-    key: 'auditLogs.read',
-    resource: 'auditLogs',
-    action: 'read',
-    label: 'View audit logs',
-    description: 'Allows viewing system audit logs',
-    group: 'Audit Logs',
-    isSystem: true,
-  },
-  {
-    key: 'auditLogs.create',
-    resource: 'auditLogs',
-    action: 'create',
-    label: 'Create audit log entries',
-    description: 'Allows creating audit log entries (used by system, not typically assigned)',
-    group: 'Audit Logs',
-    isSystem: true,
-  },
+  { key: SYSTEM_PERMISSION_KEYS.AUDIT_LOGS.READ, resource: 'audit-logs', action: 'read', label: 'View audit logs', group: 'Audit Logs', isSystem: true },
+  { key: SYSTEM_PERMISSION_KEYS.AUDIT_LOGS.CREATE, resource: 'audit-logs', action: 'create', label: 'Create audit log entries', group: 'Audit Logs', isSystem: true },
 ];
 
-/**
- * API Request Logs Permissions
- */
 const API_REQUEST_LOGS_PERMISSIONS: SystemPermissionDefinition[] = [
-  {
-    key: 'apiRequestLogs.read',
-    resource: 'apiRequestLogs',
-    action: 'read',
-    label: 'View API request logs',
-    description: 'Allows viewing API request/response logs',
-    group: 'API Request Logs',
-    isSystem: true,
-  },
+  { key: SYSTEM_PERMISSION_KEYS.API_REQUEST_LOGS.READ, resource: 'api-request-logs', action: 'read', label: 'View API request logs', group: 'API Request Logs', isSystem: true },
 ];
 
-/**
- * System / Settings Permissions
- */
 const SYSTEM_SETTINGS_PERMISSIONS: SystemPermissionDefinition[] = [
-  {
-    key: 'system.health.read',
-    resource: 'system',
-    action: 'health.read',
-    label: 'View system health',
-    description: 'Allows viewing system health status',
-    group: 'System',
-    isSystem: true,
-  },
-  {
-    key: 'settings.read',
-    resource: 'settings',
-    action: 'read',
-    label: 'View settings',
-    description: 'Allows viewing system settings',
-    group: 'System',
-    isSystem: true,
-  },
-  {
-    key: 'settings.update',
-    resource: 'settings',
-    action: 'update',
-    label: 'Update settings',
-    description: 'Allows modifying system settings',
-    group: 'System',
-    isSystem: true,
-  },
+  { key: SYSTEM_PERMISSION_KEYS.SYSTEM.HEALTH_READ, resource: 'system', action: 'health.read', label: 'View system health', group: 'System', isSystem: true },
+  { key: SYSTEM_PERMISSION_KEYS.SETTINGS.READ, resource: 'settings', action: 'read', label: 'View settings', group: 'System', isSystem: true },
+  { key: SYSTEM_PERMISSION_KEYS.SETTINGS.UPDATE, resource: 'settings', action: 'update', label: 'Update settings', group: 'System', isSystem: true },
 ];
 
 // ============================================
 // PERMISSION GROUPS ARRAY
 // ============================================
 
-/**
- * All permission groups in display order
- */
 export const SYSTEM_PERMISSION_GROUPS: SystemPermissionGroup[] = [
   { name: 'Auth', permissions: AUTH_PERMISSIONS },
   { name: 'Users', permissions: USERS_PERMISSIONS },
@@ -315,126 +150,95 @@ export const SYSTEM_PERMISSION_GROUPS: SystemPermissionGroup[] = [
 ];
 
 // ============================================
-// FLAT PERMISSION LISTS
+// FLAT LISTS (derived)
 // ============================================
 
-/**
- * Flat list of all system permissions (derived from groups)
- */
 export const SYSTEM_PERMISSIONS: SystemPermissionDefinition[] =
-  SYSTEM_PERMISSION_GROUPS.flatMap((group) => group.permissions);
+  SYSTEM_PERMISSION_GROUPS.flatMap((g) => g.permissions);
 
-/**
- * Array of all permission keys
- */
-export const SYSTEM_PERMISSION_KEYS: SystemPermissionKey[] =
-  SYSTEM_PERMISSIONS.map((p) => p.key);
+export const SYSTEM_PERMISSION_KEY_LIST: SystemPermissionKey[] =
+  SYSTEM_PERMISSIONS.map((p) => p.key as SystemPermissionKey);
 
-/**
- * Set of all permission keys for fast lookup
- */
 export const SYSTEM_PERMISSION_KEY_SET: Set<SystemPermissionKey> =
-  new Set(SYSTEM_PERMISSION_KEYS);
+  new Set(SYSTEM_PERMISSION_KEY_LIST);
 
 // ============================================
 // LOOKUP FUNCTIONS
 // ============================================
 
-/**
- * Get a permission definition by its key
- * @param key - The permission key (e.g., "users.read")
- * @returns The permission definition or undefined if not found
- */
-export function getSystemPermissionByKey(
-  key: string,
-): SystemPermissionDefinition | undefined {
+export function getSystemPermissionByKey(key: string): SystemPermissionDefinition | undefined {
   return SYSTEM_PERMISSIONS.find((p) => p.key === key);
 }
 
-/**
- * Get permissions by group name
- * @param groupName - The group name (e.g., "Users")
- * @returns Array of permissions in the group
- */
-export function getPermissionsByGroup(
-  groupName: string,
-): SystemPermissionDefinition[] {
-  const group = SYSTEM_PERMISSION_GROUPS.find(
-    (g) => g.name === groupName,
-  );
-  return group?.permissions ?? [];
+export function getPermissionsByGroup(groupName: string): SystemPermissionDefinition[] {
+  return SYSTEM_PERMISSION_GROUPS.find((g) => g.name === groupName)?.permissions ?? [];
 }
 
-/**
- * Assert that a key is a valid system permission key
- * Throws an error if the key is not found
- * @param key - The permission key to validate
- */
 export function assertValidSystemPermissionKey(key: string): void {
   if (!SYSTEM_PERMISSION_KEY_SET.has(key as SystemPermissionKey)) {
-    throw new Error(`Invalid system permission key: "${key}". Valid keys are defined in SYSTEM_PERMISSION_KEYS.`);
+    throw new Error(`Invalid permission key: "${key}"`);
   }
 }
 
-/**
- * Validate all system permissions
- * Checks for duplicates, missing fields, and structural issues
- * @returns Validation result
- */
+// ============================================
+// VALIDATION
+// ============================================
+
 export function validateSystemPermissions(): SystemPermissionsValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
 
-  // Check for duplicate keys
+  // Check duplicate keys in SYSTEM_PERMISSIONS
   const seenKeys = new Set<string>();
-  for (const permission of SYSTEM_PERMISSIONS) {
-    if (seenKeys.has(permission.key)) {
-      errors.push(`Duplicate permission key found: "${permission.key}"`);
-    }
-    seenKeys.add(permission.key);
+  for (const p of SYSTEM_PERMISSIONS) {
+    if (seenKeys.has(p.key)) errors.push(`Duplicate key: "${p.key}"`);
+    seenKeys.add(p.key);
   }
 
-  // Check that every permission has required fields
-  for (const permission of SYSTEM_PERMISSIONS) {
-    if (!permission.key) {
-      errors.push('Permission missing required field: key');
-    }
-    if (!permission.resource) {
-      errors.push(`Permission with key "${permission.key}" missing required field: resource`);
-    }
-    if (!permission.action) {
-      errors.push(`Permission with key "${permission.key}" missing required field: action`);
-    }
-    if (!permission.label) {
-      errors.push(`Permission with key "${permission.key}" missing required field: label`);
-    }
-    if (!permission.group) {
-      errors.push(`Permission with key "${permission.key}" missing required field: group`);
-    }
-    if (permission.isSystem !== true) {
-      errors.push(`Permission with key "${permission.key}" must have isSystem: true`);
+  // Check all keys in definitions exist in KEY_LIST
+  for (const p of SYSTEM_PERMISSIONS) {
+    if (!SYSTEM_PERMISSION_KEY_LIST.includes(p.key as SystemPermissionKey)) {
+      errors.push(`Definition key "${p.key}" not in KEY_LIST`);
     }
   }
 
-  // Check key format (dot notation, lowercase)
-  for (const permission of SYSTEM_PERMISSIONS) {
-    if (!permission.key.includes('.')) {
-      errors.push(`Permission key "${permission.key}" must use dot notation (resource.action)`);
-    }
-    if (permission.key !== permission.key.toLowerCase()) {
-      errors.push(`Permission key "${permission.key}" must be lowercase`);
-    }
-    if (permission.key.startsWith('.') || permission.key.endsWith('.')) {
-      errors.push(`Permission key "${permission.key}" must not start or end with a dot`);
+  // Check all keys in KEY_LIST exist in definitions
+  for (const key of SYSTEM_PERMISSION_KEY_LIST) {
+    if (!SYSTEM_PERMISSIONS.find((p) => p.key === key)) {
+      errors.push(`KEY_LIST key "${key}" not in definitions`);
     }
   }
 
-  // Check key count matches
-  if (SYSTEM_PERMISSION_KEYS.length !== SYSTEM_PERMISSIONS.length) {
-    errors.push(
-      `SYSTEM_PERMISSION_KEYS length (${SYSTEM_PERMISSION_KEYS.length}) ` +
-      `does not match SYSTEM_PERMISSIONS length (${SYSTEM_PERMISSIONS.length})`,
-    );
+  // Check SET size matches LIST length
+  if (SYSTEM_PERMISSION_KEY_SET.size !== SYSTEM_PERMISSION_KEY_LIST.length) {
+    errors.push(`KEY_SET size (${SYSTEM_PERMISSION_KEY_SET.size}) != KEY_LIST length (${SYSTEM_PERMISSION_KEY_LIST.length})`);
+  }
+
+  // Check required fields
+  for (const p of SYSTEM_PERMISSIONS) {
+    if (!p.key || !p.resource || !p.action || !p.label || !p.group) {
+      errors.push(`Permission missing required fields: ${JSON.stringify(p)}`);
+    }
+    if (p.isSystem !== true) {
+      errors.push(`Permission "${p.key}" must have isSystem: true`);
+    }
+  }
+
+  // Check key format: lowercase, dot notation, no leading/trailing dots
+  for (const p of SYSTEM_PERMISSIONS) {
+    if (p.key !== p.key.toLowerCase()) {
+      errors.push(`Key "${p.key}" must be lowercase`);
+    }
+    if (!p.key.includes('.')) {
+      errors.push(`Key "${p.key}" must use dot notation`);
+    }
+    if (p.key.startsWith('.') || p.key.endsWith('.')) {
+      errors.push(`Key "${p.key}" must not start or end with dot`);
+    }
+    // Check resource is lowercase kebab-case
+    if (p.resource !== p.resource.toLowerCase()) {
+      errors.push(`Resource "${p.resource}" in key "${p.key}" must be lowercase`);
+    }
   }
 
   return {
@@ -444,9 +248,5 @@ export function validateSystemPermissions(): SystemPermissionsValidationResult {
     totalCount: SYSTEM_PERMISSIONS.length,
   };
 }
-
-// ============================================
-// TYPE EXPORTS FOR CONVENIENCE
-// ============================================
 
 export type { SystemPermissionDefinition, SystemPermissionGroup } from './permission.types';
