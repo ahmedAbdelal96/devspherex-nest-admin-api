@@ -1,14 +1,14 @@
 # RBAC Guards & Decorators Contract
 
-## Phase 4 - RBAC Decorators, Guards & Effective Permissions
+## Phase 4-R1 - RBAC Security Gate Hardening & Verification
 
 ---
 
 ## 1. Security Model
 
-Phase 4 introduces a **default-deny** RBAC protection layer for the entire API.
+The project uses a **default-deny** RBAC protection layer for the entire API.
 
-Every endpoint MUST be explicitly classified into one of four categories using a decorator. An unclassified non-public route is automatically denied.
+Every endpoint MUST be explicitly classified into one of four categories using a decorator. An unclassified non-public route is automatically denied at runtime.
 
 | Classification | Decorator | JWT Required | Permission Required |
 |---------------|-----------|:------------:|:-------------------:|
@@ -17,7 +17,7 @@ Every endpoint MUST be explicitly classified into one of four categories using a
 | Permission-protected (ALL) | `@Permissions(...)` | ✅ | ✅ (all) |
 | Permission-protected (ANY) | `@AnyPermissions(...)` | ✅ | ✅ (at least one) |
 
-If a non-public route has **none** of these decorators, the `PermissionsGuard` will throw `ForbiddenException` with message `Access denied: route requires explicit classification`.
+If a non-public route has **none** of these decorators, the `PermissionsGuard` throws `ForbiddenException` with message `Access denied: route requires explicit classification`.
 
 ---
 
@@ -43,6 +43,8 @@ async login(@Body() dto: LoginDto) { ... }
 
 **Metadata key:** `IS_PUBLIC_KEY` = `'is_public'`
 
+**Implementation:** simple `SetMetadata(IS_PUBLIC_KEY, true)` wrapper.
+
 ---
 
 ### 2.2 `@Authenticated()`
@@ -64,6 +66,8 @@ async getMe(@CurrentUser('id') userId: string) { ... }
 **Why this decorator exists:** it removes ambiguity. A protected route with no permission requirement is intentionally authenticated-only, not "forgot to add a permission".
 
 **Metadata key:** `IS_AUTHENTICATED_KEY` = `'is_authenticated'`
+
+**Implementation:** simple `SetMetadata(IS_AUTHENTICATED_KEY, true)` wrapper.
 
 ---
 
@@ -92,6 +96,20 @@ Requires **ALL** listed permissions (AND logic).
 
 **Type-safety:** the parameter is typed as `SystemPermissionKey[]`, so invalid keys are caught at compile time as well.
 
+**Implementation (R1):** uses NestJS `applyDecorators` for clean, declarative composition:
+
+```ts
+export const Permissions = (...permissions: SystemPermissionKey[]) => {
+  for (const permission of permissions) {
+    assertValidSystemPermissionKey(permission);
+  }
+  return applyDecorators(
+    SetMetadata(REQUIRED_PERMISSIONS_KEY, permissions),
+    SetMetadata(PERMISSION_MODE_KEY, 'all' as PermissionMode),
+  );
+};
+```
+
 ---
 
 ### 2.4 `@AnyPermissions(...keys)`
@@ -108,6 +126,8 @@ Requires **at least one** of the listed permissions (OR logic).
 **Behavior:** same validation as `@Permissions`, but the guard uses `EffectivePermissionsService.hasAnyPermission`.
 
 **Metadata keys:** same as `@Permissions` but with `PERMISSION_MODE_KEY = 'any'`.
+
+**Implementation (R1):** same `applyDecorators` pattern as `@Permissions` with `'any'` mode.
 
 ---
 
@@ -147,26 +167,37 @@ providers: [
 
 ---
 
-## 5. Effective Permissions Calculation
+## 5. Metadata Override Rule
+
+`Reflector.getAllAndOverride` is used in both guards. The override order is:
+
+- **Handler-level metadata overrides class-level metadata.**
+
+This means if a class is decorated with `@Permissions(A)` and a method on that class is decorated with `@Permissions(B)`, the method will be evaluated against `B` only. There is no merging across levels — the handler wins.
+
+---
+
+## 6. Effective Permissions Calculation
 
 `EffectivePermissionsService` computes a `Set<SystemPermissionKey>` for a given `userId`.
 
-### Algorithm
+### Algorithm (R1 — DENY hardened)
 
 ```
-effective = {}
+effective = new Set<SystemPermissionKey>()
 
 1. Load user (with role and role.permissions, permissionOverrides)
-2. If user not found OR user.status !== 'ACTIVE' → return {}
+2. If user not found OR user.status !== 'ACTIVE' → return effective (empty)
 3. If role exists AND role.status === 'ACTIVE' AND role.deletedAt === null:
      for each rolePermission:
          if permission.key in SYSTEM_PERMISSION_KEY_SET:
              effective.add(key)
-4. Apply user overrides:
-     - DENY → effective.delete(key)
-     - ALLOW → effective.add(key)
-     - unknown keys (not in SYSTEM_PERMISSION_KEY_SET) are ignored
-5. Return effective
+4. Collect allowOverrideKeys (only keys in SYSTEM_PERMISSION_KEY_SET)
+5. Collect denyOverrideKeys  (only keys in SYSTEM_PERMISSION_KEY_SET)
+6. Apply ALLOW overrides (additive):
+     for each key in allowOverrideKeys: effective.add(key)
+7. Apply DENY overrides LAST:
+     for each key in denyOverrideKeys: effective.delete(key)
 ```
 
 ### Precedence
@@ -174,29 +205,39 @@ effective = {}
 | Step | Effect |
 |------|--------|
 | 1. Role grants | +permission |
-| 2. User DENY override | −permission (always wins over role) |
-| 3. User ALLOW override | +permission (only if key is valid) |
+| 2. User ALLOW override | +permission |
+| 3. User DENY override | −permission (applied LAST) |
 
-**Important:** DENY beats role ALLOW. ALLOW does NOT override role DENY (a role cannot deny a permission in the current model — only overrides can).
+**DENY always wins** — even if a key appears in role grants, in ALLOW overrides, or both. The DENY step runs last and removes the key.
 
----
+### Edge cases
 
-## 6. DENY vs ALLOW Precedence
-
-Concrete examples (assuming `users.read` is a valid system permission):
-
-| Role grants | Override | Result |
-|:-----------:|:--------:|:------:|
-| ✅ | none | granted |
-| ✅ | DENY | **denied** (DENY wins) |
-| ❌ | ALLOW | granted |
-| ❌ | none | denied |
-| ✅ | unknown `foo.bar` | granted (unknown keys ignored) |
-| ❌ | unknown `foo.bar` | denied (unknown keys ignored) |
+- **Disabled / pending user** → empty set.
+- **User without a role** → only overrides apply.
+- **Disabled or soft-deleted role** → role permissions are ignored.
+- **Unknown DB keys** (not in `SYSTEM_PERMISSION_KEY_SET`) → silently ignored. This protects against stale or manually corrupted entries.
+- **No super-admin bypass.** There is no hidden shortcut for any user, role, or email.
 
 ---
 
-## 7. Public Methods
+## 7. DENY vs ALLOW Precedence Examples
+
+Assuming `users.read` is a valid system permission:
+
+| Role grants | ALLOW | DENY | Final Result |
+|:-----------:|:-----:|:----:|:------------:|
+| ✅ | — | — | granted |
+| ✅ | — | ✅ | **denied** (DENY wins) |
+| ❌ | ✅ | — | granted |
+| ❌ | ✅ | ✅ | **denied** (DENY wins) |
+| ✅ | ✅ | ✅ | **denied** (DENY wins) |
+| ❌ | — | — | denied |
+| ✅ | unknown `foo.bar` | — | granted (unknown ignored) |
+| ❌ | unknown `foo.bar` | unknown `foo.bar` | denied (unknown ignored) |
+
+---
+
+## 8. Public Methods
 
 `EffectivePermissionsService`:
 
@@ -211,7 +252,25 @@ No caching is used in this phase. Each guard call performs a focused database re
 
 ---
 
-## 8. Controller Mapping
+## 9. RBAC Module Dependency Wiring
+
+`RbacModule` (R1) intentionally does **not** redeclare `PrismaService`:
+
+```ts
+@Module({
+  providers: [EffectivePermissionsService],
+  exports: [EffectivePermissionsService],
+})
+export class RbacModule {}
+```
+
+**Reason:** `DatabaseModule` (`src/common/database/database.module.ts`) is registered as a `@Global()` module and already provides `PrismaService`. Declaring `PrismaService` again in `RbacModule` would create a duplicate provider pattern with no functional benefit. Since `DatabaseModule` is global, `EffectivePermissionsService` (and any other provider in the application) can inject `PrismaService` directly.
+
+`PermissionsGuard` is **not** registered in `RbacModule`. It is registered globally in `AppModule` via `APP_GUARD` so it shares the correct ordering with `JwtAuthGuard`.
+
+---
+
+## 10. Controller Mapping
 
 | Controller | Route | Method | Decorator | Permission |
 |------------|-------|:------:|-----------|------------|
@@ -250,7 +309,7 @@ No caching is used in this phase. Each guard call performs a focused database re
 
 ---
 
-## 9. Security Behavior Examples
+## 11. Security Behavior Examples
 
 | Scenario | Expected |
 |----------|----------|
@@ -266,13 +325,29 @@ No caching is used in this phase. Each guard call performs a focused database re
 | Unknown DB permission key in role | Ignored (not in SYSTEM_PERMISSION_KEY_SET) |
 | User override DENY for granted permission | DENY wins → permission removed |
 | User override ALLOW for non-granted permission (valid key) | Permission added |
+| Both ALLOW and DENY for same key | DENY wins (applied last) |
 | Unclassified non-public route | ❌ 403 (default-deny) |
+| Disabled / soft-deleted role | Role permissions ignored |
+| User without role | Only overrides apply |
 
 ---
 
-## 10. What Is NOT Implemented Yet
+## 12. No-Bypass Verification
 
-The following are intentionally out of scope for Phase 4:
+The following checks were performed and confirmed:
+
+- ✅ No `superAdmin` bypass.
+- ✅ No role-name bypass (`if user.role.name === 'admin'`).
+- ✅ No email-based bypass.
+- ✅ No environment-based bypass.
+- ✅ No guard disabled globally.
+- ✅ No skip of RBAC other than `@Public()`.
+
+The only legitimate "bypass" is `@Public()`, which must be explicitly attached to a route. Every non-public route must be classified or it is denied.
+
+---
+
+## 13. What Is NOT Implemented Yet
 
 | Feature | Phase |
 |---------|-------|
@@ -285,45 +360,34 @@ The following are intentionally out of scope for Phase 4:
 | Refresh token rotation reuse detection | Phase 3-R2 |
 | RBAC caching (Redis / in-memory) | Future |
 
-No hidden bypass logic exists in this phase. Super admin behavior will be implemented later as a clearly defined system role with seeded permissions — not a magic shortcut.
-
 ---
 
-## 11. Files Created / Modified
-
-### Created
+## 14. Files
 
 ```
 src/common/rbac/
+├── index.ts
 ├── rbac.constants.ts
 ├── rbac.types.ts
+├── rbac.module.ts
+├── system-permissions.ts
+├── permission.types.ts
+├── permission.utils.ts
 ├── decorators/
 │   ├── public.decorator.ts
 │   ├── authenticated.decorator.ts
 │   └── permissions.decorator.ts
 ├── guards/
 │   └── permissions.guard.ts
-├── services/
-│   └── effective-permissions.service.ts
-└── rbac.module.ts
+└── services/
+    └── effective-permissions.service.ts
 ```
-
-`src/common/rbac/index.ts` was updated to export the new APIs.
-
-### Modified
-
-- `src/app.module.ts` — registered both guards globally via `APP_GUARD`.
-- `src/common/guards/jwt-auth.guard.ts` — already supports `@Public()` (no change needed in this phase).
-- `src/modules/auth/auth.controller.ts` — all 9 routes classified.
-- `src/modules/users/users.controller.ts` — all 9 routes classified.
-- `src/modules/roles/roles.controller.ts` — all 7 routes classified.
-- `src/modules/permissions/permissions.controller.ts` — all 3 routes classified.
-- `src/modules/audit-logs/audit-logs.controller.ts` — all 2 routes classified.
 
 ---
 
-## 12. Version History
+## 15. Version History
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.1.0 | 2026-06-09 | R1 - Decorators use `applyDecorators`; DENY hardening (applied last); RbacModule no longer redeclares PrismaService; metadata override rule documented; no-bypass verification section added |
 | 1.0.0 | 2026-06-09 | Phase 4 - Initial RBAC decorators, guards, effective permissions |

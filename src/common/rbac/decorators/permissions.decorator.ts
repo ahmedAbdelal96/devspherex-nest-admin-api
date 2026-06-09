@@ -1,62 +1,50 @@
-import { SetMetadata } from '@nestjs/common';
+import { applyDecorators, SetMetadata } from '@nestjs/common';
 import { REQUIRED_PERMISSIONS_KEY, PERMISSION_MODE_KEY } from '../rbac.constants';
 import { PermissionMode } from '../rbac.types';
 import type { SystemPermissionKey } from '../system-permissions';
 import { assertValidSystemPermissionKey } from '../system-permissions';
 
 /**
- * Requires all listed permissions (AND logic).
+ * Requires ALL listed permissions (AND logic).
  * Sets both REQUIRED_PERMISSIONS_KEY and PERMISSION_MODE_KEY = 'all'.
  *
  * Usage:
  * @Permissions(SYSTEM_PERMISSION_KEYS.USERS.READ)
  * @Permissions(SYSTEM_PERMISSION_KEYS.USERS.CREATE, SYSTEM_PERMISSION_KEYS.USERS.UPDATE)
+ *
+ * All keys are validated at decoration time against SYSTEM_PERMISSION_KEY_SET.
+ * An unknown key throws Error('Invalid permission key: "<key>"') immediately,
+ * preventing typos from silently creating security holes.
  */
-export const Permissions = (...permissions: SystemPermissionKey[]): MethodDecorator & ClassDecorator => {
-  for (const perm of permissions) {
-    assertValidSystemPermissionKey(perm);
+export const Permissions = (
+  ...permissions: SystemPermissionKey[]
+): MethodDecorator & ClassDecorator => {
+  for (const permission of permissions) {
+    assertValidSystemPermissionKey(permission);
   }
-  return (
-    target: object,
-    key?: string | symbol,
-    descriptor?: TypedPropertyDescriptor<unknown>,
-  ) => {
-    if (key !== undefined && descriptor !== undefined) {
-      // Method or property decorator
-      (SetMetadata(REQUIRED_PERMISSIONS_KEY, permissions) as MethodDecorator)(target, key, descriptor);
-      (SetMetadata(PERMISSION_MODE_KEY, 'all' as PermissionMode) as MethodDecorator)(target, key, descriptor);
-    } else {
-      // Class decorator
-      (SetMetadata(REQUIRED_PERMISSIONS_KEY, permissions) as ClassDecorator)(target as Function);
-      (SetMetadata(PERMISSION_MODE_KEY, 'all' as PermissionMode) as ClassDecorator)(target as Function);
-    }
-  };
+
+  return applyDecorators(
+    SetMetadata(REQUIRED_PERMISSIONS_KEY, permissions),
+    SetMetadata(PERMISSION_MODE_KEY, 'all' as PermissionMode),
+  );
 };
 
 /**
- * Requires at least one of the listed permissions (OR logic).
+ * Requires AT LEAST ONE of the listed permissions (OR logic).
  * Sets both REQUIRED_PERMISSIONS_KEY and PERMISSION_MODE_KEY = 'any'.
  *
  * Usage:
  * @AnyPermissions(SYSTEM_PERMISSION_KEYS.USERS.READ, SYSTEM_PERMISSION_KEYS.USERS.UPDATE)
  */
-export const AnyPermissions = (...permissions: SystemPermissionKey[]): MethodDecorator & ClassDecorator => {
-  for (const perm of permissions) {
-    assertValidSystemPermissionKey(perm);
+export const AnyPermissions = (
+  ...permissions: SystemPermissionKey[]
+): MethodDecorator & ClassDecorator => {
+  for (const permission of permissions) {
+    assertValidSystemPermissionKey(permission);
   }
-  return (
-    target: object,
-    key?: string | symbol,
-    descriptor?: TypedPropertyDescriptor<unknown>,
-  ) => {
-    if (key !== undefined && descriptor !== undefined) {
-      // Method or property decorator
-      (SetMetadata(REQUIRED_PERMISSIONS_KEY, permissions) as MethodDecorator)(target, key, descriptor);
-      (SetMetadata(PERMISSION_MODE_KEY, 'any' as PermissionMode) as MethodDecorator)(target, key, descriptor);
-    } else {
-      // Class decorator
-      (SetMetadata(REQUIRED_PERMISSIONS_KEY, permissions) as ClassDecorator)(target as Function);
-      (SetMetadata(PERMISSION_MODE_KEY, 'any' as PermissionMode) as ClassDecorator)(target as Function);
-    }
-  };
+
+  return applyDecorators(
+    SetMetadata(REQUIRED_PERMISSIONS_KEY, permissions),
+    SetMetadata(PERMISSION_MODE_KEY, 'any' as PermissionMode),
+  );
 };

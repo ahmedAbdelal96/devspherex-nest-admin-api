@@ -22,9 +22,10 @@ export class AuditLogsRepository {
         action: data.action,
         entity: data.entity ?? null,
         entityId: data.entityId ?? null,
-        metadata: data.metadata !== undefined
-          ? (data.metadata as Prisma.InputJsonValue)
-          : undefined,
+        metadata:
+          data.metadata !== undefined
+            ? (data.metadata as Prisma.InputJsonValue)
+            : undefined,
         ip: data.ip ?? null,
         userAgent: data.userAgent ?? null,
         requestId: data.requestId ?? null,
@@ -42,7 +43,16 @@ export class AuditLogsRepository {
     page: number;
     limit: number;
   }): Promise<{ data: AuditLog[]; total: number }> {
-    const { actorId, action, entity, entityId, startDate, endDate, page, limit } = params;
+    const {
+      actorId,
+      action,
+      entity,
+      entityId,
+      startDate,
+      endDate,
+      page,
+      limit,
+    } = params;
     const skip = (page - 1) * limit;
 
     const where: Prisma.AuditLogWhereInput = {};

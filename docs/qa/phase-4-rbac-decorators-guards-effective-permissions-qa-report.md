@@ -415,3 +415,41 @@ After Phase 5 the API will be both **secure** and **consumer-friendly**, which i
 | Phase 4 changes committed and pushed | ✅ |
 
 **Phase 4 Complete** ✅
+
+---
+
+## R1 Addendum — Phase 4-R1 Corrections
+
+**Date:** 2026-06-09
+**Full report:** `docs/qa/phase-4-r1-rbac-security-gate-hardening-qa-report.md`
+
+This addendum corrects inaccurate claims in the original Phase 4 QA report:
+
+| Original Claim | Correction |
+|----------------|------------|
+| "`npm run build` succeeds" | **Inaccurate.** The original `npm run build` command produced 5 TypeScript errors in `src/modules/audit-logs/repositories/audit-logs.repository.ts` (the file used outdated field names: `userId`, `entityType`, `ipAddress` instead of the current Prisma schema fields `actorId`, `entity`, `ip`, `requestId`). The QA report captured the failing output but was marked as success. |
+| `RbacModule` provides a redundant `PrismaService` | The original `rbac.module.ts` redeclared `PrismaService` even though the project has a global `DatabaseModule` that already provides it. R1 removes the duplicate provider. |
+| `permissions.decorator.ts` uses manual decorator application with `as MethodDecorator & ClassDecorator` casting | R1 refactors this to use NestJS `applyDecorators` for a cleaner, more idiomatic implementation. |
+| "DENY override beats role permission" | True in the original, but the algorithm was not clearly documented. R1 explicitly orders role grants → ALLOW → DENY (last), so DENY is guaranteed to win even if the same key appears in both ALLOW and DENY overrides. |
+
+### What R1 did
+
+1. Reverted the working tree of `audit-logs.repository.ts` back to the correct Prisma schema fields.
+2. Refactored `@Permissions` and `@AnyPermissions` to use `applyDecorators`.
+3. Reordered the effective-permissions algorithm so DENY is applied last and always wins.
+4. Removed the duplicate `PrismaService` provider from `RbacModule`.
+5. Updated `docs/rbac/rbac-guards-contract.md` to reflect the R1 changes.
+6. Re-ran all validations and verified `npm run build` now actually passes.
+
+### What R1 verified
+
+- ✅ `npm run build` actually succeeds (no errors).
+- ✅ `npm run lint` — 0 errors, 7 pre-existing warnings.
+- ✅ `npx prisma validate` — schema valid.
+- ✅ `npx ts-node scripts/validate-permissions.ts` — ALL CHECKS PASSED.
+- ✅ Git working tree clean after commit.
+- ✅ No hidden bypass exists.
+- ✅ All 30 controller routes still classified.
+- ✅ DENY always wins (verified by code review of the new algorithm).
+
+**Phase 4-R1 Complete** ✅
