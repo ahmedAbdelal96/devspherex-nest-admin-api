@@ -1,11 +1,13 @@
 import { IsString, MinLength, MaxLength } from 'class-validator';
 
-export class ResetPasswordDto {
+export class ResetPasswordWithTokenDto {
   @IsString()
-  token: string;
+  @MinLength(20)
+  @MaxLength(200)
+  resetSessionToken: string;
 
   @IsString()
   @MinLength(8)
-  @MaxLength(50)
+  @MaxLength(128)
   newPassword: string;
 }

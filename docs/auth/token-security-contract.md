@@ -219,14 +219,41 @@ This ensures:
 
 ---
 
-## 11. Security Summary
+## 11. Password Reset Invalidation (Phase 4-R2)
 
-| Action | Invalidates Access Tokens | Revokes Refresh Tokens |
-|--------|---------------------------|----------------------|
-| Logout | Yes (via tokenVersion++) | Yes (one token) |
-| Logout All | Yes (via tokenVersion++) | Yes (all tokens) |
-| Change Password | Yes (via tokenVersion++) | Yes (all tokens) |
-| Disable User | Yes (via tokenVersion++) | Yes (all tokens) |
+**Endpoint:** `POST /auth/reset-password` (and the surrounding
+`/auth/forgot-password` + `/auth/verify-password-recovery-otp` flow)
+
+**Requires:** No authentication — public endpoint. The caller proves
+control of the account by presenting a valid reset session token,
+which is bound to a server-side `PasswordRecoveryChallenge` row.
+
+**Behavior on success:**
+
+1. Update `user.passwordHash` to the new hash.
+2. Revoke all refresh tokens for the user (`revokedAt = now()`).
+3. Increment `user.tokenVersion` by 1 — this is what invalidates
+   every access token currently in flight.
+4. Mark the recovery challenge as consumed (one-time-use).
+5. Revoke every other active recovery challenge for the same user.
+
+Steps 1..5 all run inside a single Prisma transaction so a partial
+failure cannot leave the system in an inconsistent state.
+
+For the full state machine and the contract for the surrounding
+endpoints, see [Password Recovery Contract](./password-recovery-contract.md).
+
+---
+
+## 12. Security Summary
+
+| Action                       | Invalidates Access Tokens | Revokes Refresh Tokens |
+|------------------------------|---------------------------|------------------------|
+| Logout                       | Yes (via tokenVersion++)  | Yes (one token)        |
+| Logout All                   | Yes (via tokenVersion++)  | Yes (all tokens)       |
+| Change Password              | Yes (via tokenVersion++)  | Yes (all tokens)       |
+| Password Reset (recovery)    | Yes (via tokenVersion++)  | Yes (all tokens)       |
+| Disable User                 | Yes (via tokenVersion++)  | Yes (all tokens)       |
 
 ---
 
@@ -234,6 +261,7 @@ This ensures:
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.2.0 | 2026-06-09 | R2: Documented password-reset invalidation; cross-link to password-recovery-contract.md |
 | 1.1.0 | 2026-06-09 | R1: Added logout-all, tightened logout validation |
 | 1.0.0 | 2026-06-09 | Initial Phase 3 implementation |
 

@@ -13,12 +13,15 @@ import {
   LoginDto,
   RefreshTokenDto,
   ChangePasswordDto,
-  ForgotPasswordDto,
-  ResetPasswordDto,
   LogoutDto,
   AuthResponseDto,
   RefreshTokenResponseDto,
 } from './dto';
+import {
+  RequestPasswordRecoveryDto,
+  VerifyPasswordRecoveryOtpDto,
+  ResetPasswordWithTokenDto,
+} from './password-recovery/dto';
 import {
   RegisterUseCase,
   LoginUseCase,
@@ -27,9 +30,10 @@ import {
   RefreshTokenUseCase,
   GetMeUseCase,
   ChangePasswordUseCase,
-  ForgotPasswordUseCase,
-  ResetPasswordUseCase,
 } from './use-cases';
+import { RequestPasswordRecoveryUseCase } from './password-recovery/use-cases/request-password-recovery.use-case';
+import { VerifyPasswordRecoveryOtpUseCase } from './password-recovery/use-cases/verify-password-recovery-otp.use-case';
+import { ResetPasswordWithTokenUseCase } from './password-recovery/use-cases/reset-password-with-token.use-case';
 
 @Controller('auth')
 export class AuthController {
@@ -41,8 +45,9 @@ export class AuthController {
     private readonly refreshTokenUseCase: RefreshTokenUseCase,
     private readonly getMeUseCase: GetMeUseCase,
     private readonly changePasswordUseCase: ChangePasswordUseCase,
-    private readonly forgotPasswordUseCase: ForgotPasswordUseCase,
-    private readonly resetPasswordUseCase: ResetPasswordUseCase,
+    private readonly requestPasswordRecoveryUseCase: RequestPasswordRecoveryUseCase,
+    private readonly verifyPasswordRecoveryOtpUseCase: VerifyPasswordRecoveryOtpUseCase,
+    private readonly resetPasswordWithTokenUseCase: ResetPasswordWithTokenUseCase,
   ) {}
 
   @Public()
@@ -104,14 +109,34 @@ export class AuthController {
   @Public()
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
-  async forgotPassword(@Body() dto: ForgotPasswordDto): Promise<{ message: string }> {
-    return this.forgotPasswordUseCase.execute(dto.email);
+  async forgotPassword(
+    @Body() dto: RequestPasswordRecoveryDto,
+  ): Promise<{ message: string }> {
+    await this.requestPasswordRecoveryUseCase.execute(dto.email);
+    return {
+      message:
+        'If this email exists, password recovery instructions will be sent.',
+    };
+  }
+
+  @Public()
+  @Post('verify-password-recovery-otp')
+  @HttpCode(HttpStatus.OK)
+  async verifyPasswordRecoveryOtp(
+    @Body() dto: VerifyPasswordRecoveryOtpDto,
+  ): Promise<{ resetSessionToken: string; expiresIn: number }> {
+    return this.verifyPasswordRecoveryOtpUseCase.execute(dto.email, dto.otp);
   }
 
   @Public()
   @Post('reset-password')
   @HttpCode(HttpStatus.OK)
-  async resetPassword(@Body() dto: ResetPasswordDto): Promise<{ message: string }> {
-    return this.resetPasswordUseCase.execute(dto);
+  async resetPassword(
+    @Body() dto: ResetPasswordWithTokenDto,
+  ): Promise<{ message: string }> {
+    return this.resetPasswordWithTokenUseCase.execute(
+      dto.resetSessionToken,
+      dto.newPassword,
+    );
   }
 }

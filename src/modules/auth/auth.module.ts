@@ -17,9 +17,8 @@ import {
   RefreshTokenUseCase,
   GetMeUseCase,
   ChangePasswordUseCase,
-  ForgotPasswordUseCase,
-  ResetPasswordUseCase,
 } from './use-cases';
+import { PasswordRecoveryModule } from './password-recovery/password-recovery.module';
 
 @Module({
   imports: [
@@ -34,6 +33,8 @@ import {
       }),
       inject: [ConfigService],
     }),
+    // Password recovery subsystem
+    PasswordRecoveryModule,
   ],
   controllers: [AuthController],
   providers: [
@@ -53,8 +54,6 @@ import {
     RefreshTokenUseCase,
     GetMeUseCase,
     ChangePasswordUseCase,
-    ForgotPasswordUseCase,
-    ResetPasswordUseCase,
   ],
   exports: [
     PasswordService,

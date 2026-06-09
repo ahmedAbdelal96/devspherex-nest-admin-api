@@ -30,6 +30,18 @@ enum PermissionOverrideEffect {
   DENY
 }
 
+enum PasswordRecoveryPurpose {
+  PASSWORD_RESET
+}
+
+enum PasswordRecoveryChannel {
+  EMAIL
+  WHATSAPP
+  SMS
+  NOOP
+  CONSOLE
+}
+
 // ============================================
 // USER MODEL
 // ============================================
@@ -50,11 +62,12 @@ model User {
   deletedAt    DateTime?  @map("deleted_at")
 
   // Relations
-  role                Role?                    @relation(fields: [roleId], references: [id])
-  permissionOverrides UserPermissionOverride[]
-  refreshTokens       RefreshToken[]
-  auditLogs           AuditLog[]
-  apiRequestLogs      ApiRequestLog[]
+  role                       Role?                       @relation(fields: [roleId], references: [id])
+  permissionOverrides        UserPermissionOverride[]
+  refreshTokens              RefreshToken[]
+  auditLogs                  AuditLog[]
+  apiRequestLogs             ApiRequestLog[]
+  passwordRecoveryChallenges PasswordRecoveryChallenge[]
 
   @@index([email])
   @@index([status])
@@ -252,4 +265,36 @@ model ApiRequestLog {
   @@index([statusCode, createdAt])
   @@index([actorId, createdAt])
   @@map("api_request_logs")
+}
+
+// ============================================
+// PASSWORD RECOVERY CHALLENGE MODEL
+// Phase 4-R2 - Configurable Password Recovery Foundation
+// ============================================
+
+model PasswordRecoveryChallenge {
+  id                  String                  @id @default(uuid())
+  userId              String?                 @map("user_id")
+  user                User?                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emailHash           String                  @map("email_hash")
+  purpose             PasswordRecoveryPurpose @default(PASSWORD_RESET)
+  channel             PasswordRecoveryChannel @default(NOOP)
+  otpHash             String?                 @map("otp_hash")
+  otpExpiresAt        DateTime                @map("otp_expires_at")
+  otpVerifiedAt       DateTime?               @map("otp_verified_at")
+  resetTokenHash      String?                 @map("reset_token_hash")
+  resetTokenExpiresAt DateTime?               @map("reset_token_expires_at")
+  failedAttempts      Int                     @default(0) @map("failed_attempts")
+  maxAttempts         Int                     @default(5) @map("max_attempts")
+  revokedAt           DateTime?               @map("revoked_at")
+  consumedAt          DateTime?               @map("consumed_at")
+  requestIp           String?                 @map("request_ip")
+  userAgent           String?                 @map("user_agent")
+  createdAt           DateTime                @default(now()) @map("created_at")
+  updatedAt           DateTime                @updatedAt @map("updated_at")
+
+  @@index([userId, purpose, revokedAt, consumedAt])
+  @@index([emailHash, purpose, createdAt])
+  @@index([createdAt])
+  @@map("password_recovery_challenges")
 }
