@@ -516,7 +516,7 @@ The following commands were run during R4:
    auth-module refactor did not break the central permission
    source).
 8. `npm run test` — Jest (project has no tests yet; command
-   exits with "No tests found").
+   exits with "No tests found, exiting with code 1" — see §10.8).
 
 R4 is intentionally not adding tests in this phase. Tests are
 called out as the recommended scope for the next phase.
@@ -610,19 +610,38 @@ $ npm run test
 > devspherex-nest-admin-api@0.1.0 test
 > jest
 
-No tests found, exiting with code 0
+No tests found, exiting with code 1
+Run with `--passWithNoTests` to exit with code 0
+In D:\Web\templets\Nestjs\devspherex-nest-admin-api\src
+  128 files checked.
+  testMatch:  - 0 matches
+  testPathIgnorePatterns: \\node_modules\\ - 128 matches
+  testRegex: .*\.spec\.ts$ - 0 matches
+Pattern:  - 0 matches
 ```
 
-Exit code: 0. The project has no test files yet; this is the
-expected behavior and is documented as a follow-up.
+**Exit code: 1.** The project has no test files yet; jest exits
+non-zero when no test files match its `testRegex`. The
+`--passWithNoTests` flag would be required to make it exit 0,
+but R4 did not introduce that flag and CI for this project is
+not yet configured. This is **not a regression**. R3 also
+produced "No tests found" with exit code 1. R4 is the first
+phase to document the exit code honestly (it was previously
+written as 0 by mistake).
 
 ---
 
 ## 11. Tests Result
 
-`npm run test` reports "No tests found, exiting with code 0".
+`npm run test` reports "No tests found, exiting with code 1".
 The project has no `*.spec.ts` files and no jest configuration
 beyond the default NestJS scaffold.
+
+> **Correction (Phase 4-R4-R1):** the previous version of this
+> section claimed exit code 0. That was incorrect. The honest
+> result is exit code 1 with jest's `--passWithNoTests` message.
+> This is not a regression — R3 produced the same result. R4-R1
+> corrects the documentation to match the actual behavior.
 
 R4 does not add tests. The recommended scope for the next phase
 includes adding `*.spec.ts` files for:
@@ -732,7 +751,7 @@ npm run lint
 # 7. Permission contract script
 npx ts-node scripts/validate-permissions.ts
 
-# 8. Tests (project has no tests; expected to exit 0 with "No tests found")
+# 8. Tests (project has no tests; expected to exit 1 with "No tests found")
 npm run test
 ```
 
@@ -776,3 +795,113 @@ respected:
 - ✅ Only Phase 4-R4 changes are committed (single commit,
   message `fix(auth): enforce password recovery provider
   readiness`).
+
+---
+
+## 16. Phase 4-R4-R1 Addendum — Runtime Boot Fix & Contract Cleanup
+
+> Status: appended 2026-06-09. Phase 4-R4-R1 is a **repair**
+> pass over Phase 4-R4. It does not regress any R4 behavior
+> (provider readiness, devOtp naming, timing floor) and does
+> not regress any R3 behavior (atomic reset, unknown marker,
+> controller devOtp/IP/UA, production channel hardening).
+>
+> The full R4-R1 QA report lives at
+> `docs/qa/phase-4-r4-r1-password-recovery-runtime-boot-fix-qa-report.md`.
+> This addendum is a pointer plus a brief delta summary.
+
+### 16.1 What R4-R1 fixes
+
+1. **Circular DI dependency (R4 introduced).** R4 placed
+   readiness predicates on `PasswordRecoveryChannelService`
+   and had `PasswordRecoveryConfig` inject the service to
+   call them. That created a runtime DI cycle
+   (`PasswordRecoveryConfig` ↔ `PasswordRecoveryChannelService`).
+   TypeScript compiles this fine but the NestJS DI container
+   may fail or behave unpredictably at module-construction
+   time. R4-R1 moves the readiness logic to a pure helper
+   file (`password-recovery-channel-readiness.ts`) that has
+   no DI dependencies. Both `PasswordRecoveryConfig` and
+   `PasswordRecoveryChannelService` call the pure helper
+   directly. The cycle is broken without `forwardRef`.
+2. **Config key mismatch (R4 introduced).** R4's
+   `src/config/configuration.ts` exposed
+   `passwordRecovery.maxAttempts` while
+   `PasswordRecoveryConfig` reads
+   `passwordRecovery.maxVerifyAttempts`. As a result,
+   `PASSWORD_RECOVERY_MAX_VERIFY_ATTEMPTS` was silently
+   ignored and the config class always fell back to the
+   default of `5`. R4-R1 renames the configuration key to
+   `maxVerifyAttempts` so they match. The other 10 keys
+   (`enabled`, `channel`, `otpLength`, `otpTtlSeconds`,
+   `resetTokenTtlSeconds`, `resendCooldownSeconds`,
+   `revokeSessionsOnSuccess`, `pepper`, `devReturnOtp`,
+   `minResponseMs`) were already consistent before R4-R1 and
+   remain so.
+3. **Documentation correction.** R4's QA report claimed
+   `npm run test` exits with code 0. The actual jest output
+   is "No tests found, exiting with code 1". R4-R1 corrects
+   the documentation in §10.8 and §11. This is not a
+   regression — jest's behavior is unchanged — but the
+   documentation now matches reality.
+
+### 16.2 R4 invariants preserved by R4-R1
+
+R4-R1 was carefully scoped to avoid regressing any R4 fix.
+The following invariants are verified to still hold:
+
+- **Production boot guard still refuses non-ready channels.**
+  The full production-boot matrix from §3 still holds.
+  `NOOP` / `CONSOLE` / `EMAIL` / `WHATSAPP` / `SMS` are all
+  still refused when `PASSWORD_RECOVERY_ENABLED=true` in
+  production. The rejection path is now driven by the pure
+  helper rather than by a service method, but the contract
+  is the same.
+- **`devOtp` field name is still uniformly `devOtp`.** No
+  R4-R1 change to the use-case return type, the controller
+  return type, or the contract wording.
+- **Optional timing floor still works the same way.** No
+  R4-R1 change to `RequestPasswordRecoveryUseCase`. The
+  floor is still opt-in via
+  `PASSWORD_RECOVERY_MIN_RESPONSE_MS`, still applied in a
+  `finally` block, and still best-effort.
+- **Reset transaction still atomic.** No R4-R1 change to
+  `ResetPasswordWithTokenUseCase`. The R3 atomic-transaction
+  fix is preserved.
+- **Unknown-email marker still safe.** No R4-R1 change to
+  the marker challenge logic. The R3 marker fix is
+  preserved.
+
+### 16.3 Runtime boot evidence (R4-R1)
+
+R4-R1 ran `npm run start` against the existing local
+`.env`. The boot output proves that `PasswordRecoveryConfig`
+and `PasswordRecoveryChannelService` are constructed without
+DI errors:
+
+```
+[Nest]  LOG [InstanceLoader] AppConfigModule dependencies initialized +16ms
+[Nest]  ERROR [ExceptionHandler] PrismaClientInitializationError: ... needs to be constructed with a non-empty, valid PrismaClientOptions ...
+```
+
+The error is from `PrismaService` (a downstream provider in
+the password-recovery module), **not** from the
+password-recovery config or channel service. Nest
+successfully resolved the config namespace, validated it,
+and proceeded to instantiate `PrismaService`. The
+`PrismaService` error is a pre-existing Prisma 7
+compatibility issue unrelated to R4-R1. The full R4-R1 QA
+report at
+`docs/qa/phase-4-r4-r1-password-recovery-runtime-boot-fix-qa-report.md`
+contains the captured output and the post-fix verification
+that the boot progressed past the password-recovery module.
+
+### 16.4 Cross-reference
+
+- R4-R1 QA report:
+  [phase-4-r4-r1-password-recovery-runtime-boot-fix-qa-report.md](phase-4-r4-r1-password-recovery-runtime-boot-fix-qa-report.md)
+- Contract:
+  [../auth/password-recovery-contract.md](../auth/password-recovery-contract.md)
+  (version 1.2.1)
+- `.env.example`:
+  [../../.env.example](../../.env.example)

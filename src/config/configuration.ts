@@ -20,7 +20,10 @@ export const passwordRecoveryConfig = registerAs('passwordRecovery', () => ({
     process.env.PASSWORD_RECOVERY_RESEND_COOLDOWN_SECONDS || '60',
     10,
   ),
-  maxAttempts: parseInt(process.env.PASSWORD_RECOVERY_MAX_VERIFY_ATTEMPTS || '5', 10),
+  maxVerifyAttempts: parseInt(
+    process.env.PASSWORD_RECOVERY_MAX_VERIFY_ATTEMPTS || '5',
+    10,
+  ),
   revokeSessionsOnSuccess: parseBool(
     process.env.PASSWORD_RECOVERY_REVOKE_SESSIONS_ON_SUCCESS,
     true,

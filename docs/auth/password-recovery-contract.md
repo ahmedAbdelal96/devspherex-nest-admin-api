@@ -1,6 +1,6 @@
 # Password Recovery Contract
 
-## Phases 4-R2 + 4-R3 + 4-R4 — Configurable Password Recovery Foundation, Hardening, and Provider Readiness
+## Phases 4-R2 + 4-R3 + 4-R4 + 4-R4-R1 — Configurable Password Recovery Foundation, Hardening, Provider Readiness, and DI Cycle Fix
 
 ---
 
@@ -39,6 +39,25 @@ gaps:
   timing gap between the known-email and unknown-email branches.
   It is a defensive layer only; it is not a hard constant-time
   guarantee.
+
+Phase 4-R4-R1 is a repair pass over Phase 4-R4:
+
+- **Removes the runtime DI cycle** that Phase 4-R4 introduced
+  between `PasswordRecoveryConfig` (which called readiness
+  predicates) and `PasswordRecoveryChannelService` (which the
+  config injected to call them). Phase 4-R4-R1 moves the
+  readiness logic to a **pure helper file** that has no
+  NestJS DI decorators. Both `PasswordRecoveryConfig` and
+  `PasswordRecoveryChannelService` call the pure helper
+  directly, so there is exactly one source of truth and no
+  circular DI dependency.
+- **Fixes the config key mismatch** between
+  `src/config/configuration.ts` and
+  `PasswordRecoveryConfig`. The configuration namespace
+  previously exposed `maxAttempts` while the config class
+  read `maxVerifyAttempts`, which silently fell back to the
+  default. Phase 4-R4-R1 renames the configuration key to
+  `maxVerifyAttempts` so they match.
 
 ---
 
@@ -356,33 +375,61 @@ All values are read from environment variables, exposed at
 | `PASSWORD_RECOVERY_DEV_RETURN_OTP`            | `false`            | `true` / `false` (refused in production)|
 | `PASSWORD_RECOVERY_MIN_RESPONSE_MS`           | `0`                | 0..5000 (best-effort timing floor)      |
 
-### 7.1 Provider readiness (Phase 4-R4)
+### 7.1 Provider readiness (Phase 4-R4 + 4-R4-R1)
 
-`PasswordRecoveryChannelService` exposes two predicates that the
-config boot guard relies on:
+**Phase 4-R4-R1: the source of truth is a pure helper file,
+not a DI service.**
 
-- `isChannelImplemented(channel)` — does the channel have a real
-  `PasswordRecoveryChannelProvider` registered in this build?
-  - `NOOP`: true
-  - `CONSOLE`: true
-  - `EMAIL`, `WHATSAPP`, `SMS`: **false** (no provider is shipped
-    in this starter)
-- `isChannelProductionReady(channel)` — is the channel safe to
-  use in a live deployment?
-  - All channels return **false** in this starter. A real provider
-    must be implemented and the predicate must be updated before
-    the channel can return `true`.
+`src/modules/auth/password-recovery/password-recovery-channel-readiness.ts`
+is the single source of truth for channel readiness. It is
+intentionally NOT decorated with `@Injectable()` and does not
+import any `@nestjs/*` symbols. It exports three pure functions:
+
+- `isPasswordRecoveryChannelImplemented(channel)` — does the
+  channel have a real `PasswordRecoveryChannelProvider`
+  registered in this build?
+- `isPasswordRecoveryChannelProductionReady(channel)` — is the
+  channel safe to use in a live deployment?
+- `getPasswordRecoveryChannelReadiness(channel)` — returns the
+  full record `{ implemented, productionReady, reason }`.
+
+The current readiness table:
+
+| Channel    | `implemented` | `productionReady` | `reason`                                           |
+| ---------- | ------------- | ----------------- | -------------------------------------------------- |
+| `NOOP`     | `true`        | `false`           | NOOP discards delivery and is dev/test only        |
+| `CONSOLE`  | `true`        | `false`           | CONSOLE logs OTPs and is dev/test only             |
+| `EMAIL`    | `false`       | `false`           | EMAIL provider is not implemented in this starter  |
+| `WHATSAPP` | `false`       | `false`           | WHATSAPP provider is not implemented in this starter |
+| `SMS`      | `false`       | `false`           | SMS provider is not implemented in this starter    |
+
+`PasswordRecoveryChannelService` still exposes
+`isChannelImplemented(channel)` and
+`isChannelProductionReady(channel)` for backward compatibility
+with Phase 4-R4 callers, but these are thin delegations to the
+pure helper. There is exactly one source of truth.
+
+**Why a pure file?** Phase 4-R4 placed the readiness predicates
+on `PasswordRecoveryChannelService` and had `PasswordRecoveryConfig`
+inject the service to call them. This created a runtime DI
+cycle (`PasswordRecoveryConfig` → `PasswordRecoveryChannelService`
+→ `PasswordRecoveryConfig`). Phase 4-R4-R1 moves the logic to a
+pure file so neither class depends on the other for readiness
+checks. The cycle is broken without `forwardRef`.
 
 When a real provider is added in a future phase, the implementer
 must:
 
-1. Implement `PasswordRecoveryChannelProvider` in a new file.
+1. Implement `PasswordRecoveryChannelProvider` in a new file
+   under `channels/`.
 2. Register the new channel as a provider in
    `password-recovery.module.ts`.
 3. Inject it into `PasswordRecoveryChannelService` and add a
    `case` to `resolveChannel`.
-4. Update `isChannelImplemented` and `isChannelProductionReady`
-   to reflect the new state.
+4. Update the `READINESS` table in
+   `password-recovery-channel-readiness.ts` to flip
+   `implemented` and (when the provider is genuinely safe for
+   production) `productionReady`.
 
 ### 7.2 Production boot guards (Phase 4-R4)
 
@@ -407,6 +454,41 @@ following cases:
 
 For local development, a committed `.env.example` ships with safe
 defaults and inline comments explaining each variable.
+
+### 7.3 Config key contract (Phase 4-R4-R1)
+
+`src/config/configuration.ts` exposes the password-recovery
+namespace. Every key the namespace exports MUST match a key
+that `PasswordRecoveryConfig` reads via `ConfigService.get`. If
+the namespace and the config class drift, the consumer silently
+falls back to the default value and the env variable has no
+effect.
+
+Phase 4-R4-R1 audit:
+
+| Env variable                                  | Config namespace key                | Config class reads                                      |
+| --------------------------------------------- | ----------------------------------- | ------------------------------------------------------- |
+| `PASSWORD_RECOVERY_ENABLED`                   | `passwordRecovery.enabled`          | `passwordRecovery.enabled`                              |
+| `PASSWORD_RECOVERY_CHANNEL`                   | `passwordRecovery.channel`          | `passwordRecovery.channel`                              |
+| `PASSWORD_RECOVERY_OTP_LENGTH`                | `passwordRecovery.otpLength`        | `passwordRecovery.otpLength`                            |
+| `PASSWORD_RECOVERY_OTP_TTL_SECONDS`           | `passwordRecovery.otpTtlSeconds`    | `passwordRecovery.otpTtlSeconds`                        |
+| `PASSWORD_RECOVERY_RESET_TOKEN_TTL_SECONDS`   | `passwordRecovery.resetTokenTtlSeconds` | `passwordRecovery.resetTokenTtlSeconds`              |
+| `PASSWORD_RECOVERY_RESEND_COOLDOWN_SECONDS`   | `passwordRecovery.resendCooldownSeconds` | `passwordRecovery.resendCooldownSeconds`            |
+| `PASSWORD_RECOVERY_MAX_VERIFY_ATTEMPTS`       | `passwordRecovery.maxVerifyAttempts`| `passwordRecovery.maxVerifyAttempts`                    |
+| `PASSWORD_RECOVERY_REVOKE_SESSIONS_ON_SUCCESS`| `passwordRecovery.revokeSessionsOnSuccess` | `passwordRecovery.revokeSessionsOnSuccess`      |
+| `PASSWORD_RECOVERY_PEPPER`                    | `passwordRecovery.pepper`           | `passwordRecovery.pepper`                               |
+| `PASSWORD_RECOVERY_DEV_RETURN_OTP`            | `passwordRecovery.devReturnOtp`     | `passwordRecovery.devReturnOtp`                         |
+| `PASSWORD_RECOVERY_MIN_RESPONSE_MS`           | `passwordRecovery.minResponseMs`    | `passwordRecovery.minResponseMs`                        |
+
+**Phase 4-R4-R1 fix:** before this phase, the namespace
+exposed `passwordRecovery.maxAttempts` while the config class
+read `passwordRecovery.maxVerifyAttempts`. As a result,
+`PASSWORD_RECOVERY_MAX_VERIFY_ATTEMPTS` was silently ignored
+and the config class always used the default of `5`. Phase
+4-R4-R1 renames the namespace key to `maxVerifyAttempts` so
+they match. The dev-return-OTP, min-response-MS, and
+revoke-sessions keys were already consistent before this phase
+and remain so.
 
 ---
 
@@ -653,28 +735,29 @@ readiness predicates.
 
 ```
 src/modules/auth/password-recovery/
-├── password-recovery.module.ts            (NestJS @Global module)
-├── password-recovery.config.ts            (env loading + production safety)
-├── password-recovery.constants.ts         (defaults, generic messages)
-├── password-recovery.types.ts             (channel + purpose constants/types)
+├── password-recovery.module.ts                          (NestJS @Global module)
+├── password-recovery.config.ts                          (env loading + production safety)
+├── password-recovery.constants.ts                       (defaults, generic messages)
+├── password-recovery.types.ts                           (channel + purpose constants/types)
+├── password-recovery-channel-readiness.ts               (Phase 4-R4-R1: pure readiness registry)
 ├── channels/
 │   ├── password-recovery-channel.interface.ts
 │   ├── noop-password-recovery.channel.ts
 │   └── console-password-recovery.channel.ts
 ├── repositories/
-│   └── password-recovery.repository.ts    (Prisma access)
+│   └── password-recovery.repository.ts                  (Prisma access)
 ├── services/
 │   ├── password-recovery-hashing.service.ts
 │   ├── password-recovery-token.service.ts
 │   ├── password-recovery-policy.service.ts
-│   └── password-recovery-channel.service.ts   (Phase 4-R4: readiness metadata)
+│   └── password-recovery-channel.service.ts             (Phase 4-R4 readiness predicates delegate to the pure helper)
 ├── dto/
 │   ├── request-password-recovery.dto.ts
 │   ├── verify-password-recovery-otp.dto.ts
 │   ├── reset-password-with-token.dto.ts
 │   └── index.ts
 └── use-cases/
-    ├── request-password-recovery.use-case.ts   (Phase 4-R4: timing floor)
+    ├── request-password-recovery.use-case.ts           (Phase 4-R4: timing floor)
     ├── verify-password-recovery-otp.use-case.ts
     ├── reset-password-with-token.use-case.ts
     └── index.ts
@@ -684,6 +767,19 @@ The module is registered as `@Global()` so that `PasswordService`
 (re-used for hashing the new password on reset) and the
 `use-cases` can be injected anywhere in the application without
 re-importing the module.
+
+**Phase 4-R4-R1 — readiness registry is a pure file (no DI):**
+`password-recovery-channel-readiness.ts` is intentionally NOT
+decorated with `@Injectable()` and does not import any
+`@nestjs/*` symbols. It exports pure functions
+(`isPasswordRecoveryChannelImplemented`,
+`isPasswordRecoveryChannelProductionReady`,
+`getPasswordRecoveryChannelReadiness`) that both
+`PasswordRecoveryConfig` and `PasswordRecoveryChannelService`
+call. This is the source of truth for channel readiness and
+breaks the Phase 4-R4 DI cycle
+(`PasswordRecoveryConfig` ↔ `PasswordRecoveryChannelService`).
+See §7.1 for the readiness table.
 
 ---
 
@@ -707,6 +803,7 @@ re-importing the module.
 
 | Version | Date       | Phase    | Changes                                                                          |
 | ------- | ---------- | -------- | -------------------------------------------------------------------------------- |
+| 1.2.1   | 2026-06-09 | 4-R4-R1  | Moved channel readiness to a pure helper (`password-recovery-channel-readiness.ts`); broke the Phase 4-R4 DI cycle between `PasswordRecoveryConfig` and `PasswordRecoveryChannelService`; fixed `passwordRecovery.maxVerifyAttempts` config key mismatch |
 | 1.2.0   | 2026-06-09 | 4-R4     | Provider readiness (no real EMAIL/WA/SMS provider in this starter; production boot refuses non-ready channels); `devOtp` unified field name; optional `PASSWORD_RECOVERY_MIN_RESPONSE_MS` timing floor; honest timing claims |
 | 1.1.0   | 2026-06-09 | 4-R3     | Atomic reset transaction; unknown-email markers; controller devOtp + IP/UA pass; production channel hardening; .env.example |
 | 1.0.0   | 2026-06-09 | 4-R2     | Initial PasswordRecoveryChallenge model, 3 use-cases, 2 channels, env config    |

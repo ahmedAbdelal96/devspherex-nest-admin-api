@@ -5,15 +5,32 @@
  * validates them at module construction time. Rejects unsafe configurations
  * in production:
  *   - When PASSWORD_RECOVERY_ENABLED=true:
- *     * PASSWORD_RECOVERY_CHANNEL must be a production-ready channel
- *       (currently none; see `PasswordRecoveryChannelService.isChannelProductionReady`).
+ *     * PASSWORD_RECOVERY_CHANNEL must be implemented AND production-ready
+ *       (see `password-recovery-channel-readiness.ts`).
  *     * PASSWORD_RECOVERY_PEPPER must not be a weak default and ≥16 chars.
  *   - Always in production:
  *     * PASSWORD_RECOVERY_DEV_RETURN_OTP must be false.
  *
  * Until a real EMAIL / WHATSAPP / SMS provider is implemented and the
- * `isChannelProductionReady` predicate is updated, the only way to
- * run a production deployment is `PASSWORD_RECOVERY_ENABLED=false`.
+ * readiness table is updated, the only way to run a production deployment
+ * is `PASSWORD_RECOVERY_ENABLED=false`.
+ *
+ * ------------------------------------------------------------------------
+ * DI design (Phase 4-R4-R1)
+ * ------------------------------------------------------------------------
+ * This class MUST NOT inject `PasswordRecoveryChannelService`.
+ *
+ * Phase 4-R4 originally injected the service to call its readiness
+ * predicates. That created a circular dependency:
+ *
+ *   PasswordRecoveryConfig --> PasswordRecoveryChannelService --> PasswordRecoveryConfig
+ *
+ * Phase 4-R4-R1 moves the readiness logic to a pure helper file
+ * (`./password-recovery-channel-readiness.ts`) that has no DI
+ * dependencies. This class calls the pure functions directly.
+ * `PasswordRecoveryChannelService` also calls the same pure
+ * functions for its public predicates, so the two stay in sync
+ * without forming a DI cycle.
  *
  * All env variables are read from the `passwordRecovery` namespace:
  *   PASSWORD_RECOVERY_ENABLED
@@ -44,7 +61,11 @@ import {
   PASSWORD_RECOVERY_DEFAULT_MIN_RESPONSE_MS,
   PASSWORD_RECOVERY_MAX_MIN_RESPONSE_MS,
 } from './password-recovery.constants';
-import { PasswordRecoveryChannelService } from './services/password-recovery-channel.service';
+import {
+  isPasswordRecoveryChannelImplemented,
+  isPasswordRecoveryChannelProductionReady,
+  getPasswordRecoveryChannelReadiness,
+} from './password-recovery-channel-readiness';
 
 const WEAK_PEPPER_VALUES = new Set<string>([
   'change-me-in-production',
@@ -72,10 +93,7 @@ export class PasswordRecoveryConfig {
   readonly minResponseMs: number;
   readonly nodeEnv: string;
 
-  constructor(
-    configService: ConfigService,
-    channelService: PasswordRecoveryChannelService,
-  ) {
+  constructor(configService: ConfigService) {
     this.nodeEnv = (
       configService.get<string>('app.env') ||
       process.env.NODE_ENV ||
@@ -155,7 +173,7 @@ export class PasswordRecoveryConfig {
       'PASSWORD_RECOVERY_MIN_RESPONSE_MS',
     );
 
-    this.validateProductionSafety(channelService);
+    this.validateProductionSafety();
     this.logSafeSummary();
   }
 
@@ -214,39 +232,38 @@ export class PasswordRecoveryConfig {
     return value as PasswordRecoveryChannel;
   }
 
-  private validateProductionSafety(
-    channelService: PasswordRecoveryChannelService,
-  ): void {
+  /**
+   * Production-only safety checks.
+   *
+   * Phase 4-R4-R1: this method calls pure helper functions from
+   * `password-recovery-channel-readiness.ts` rather than injecting
+   * `PasswordRecoveryChannelService`. This breaks the original R4
+   * DI cycle.
+   */
+  private validateProductionSafety(): void {
     if (!this.isProduction) {
       return;
     }
 
     if (this.enabled) {
       // When recovery is enabled in production, the configured channel
-      // MUST be production-ready — i.e., must have a real provider that
-      // can actually deliver OTPs to real users.
-      //
-      // The readiness check is delegated to
-      // `PasswordRecoveryChannelService.isChannelProductionReady`, which
-      // is the single source of truth for "is this channel actually
-      // implemented as a working provider?". It returns `false` for
-      // CONSOLE (writes to the server log), NOOP (discards), and
-      // EMAIL/WHATSAPP/SMS (no real provider in this starter).
-      //
-      // Until a real provider is implemented and the predicate is
-      // updated, the only safe production posture is
-      // `PASSWORD_RECOVERY_ENABLED=false`.
-      if (!channelService.isChannelImplemented(this.channel)) {
+      // MUST be production-ready. Readiness is consulted via the pure
+      // helper, which is the single source of truth for "is this
+      // channel actually implemented as a working provider?".
+      const readiness = getPasswordRecoveryChannelReadiness(this.channel);
+
+      if (!isPasswordRecoveryChannelImplemented(this.channel)) {
         throw new BadRequestException(
-          `PASSWORD_RECOVERY_CHANNEL=${this.channel} is not implemented in this build. ` +
-            `No provider is registered for this channel. ` +
-            `Set PASSWORD_RECOVERY_ENABLED=false, or implement a real provider and register it in PasswordRecoveryChannelService.`,
+          `PASSWORD_RECOVERY_CHANNEL=${this.channel} is not implemented in this starter. ` +
+            `${readiness.reason}. ` +
+            `Set PASSWORD_RECOVERY_ENABLED=false in production or implement a real ${this.channel} provider and mark it production-ready.`,
         );
       }
-      if (!channelService.isChannelProductionReady(this.channel)) {
+      if (!isPasswordRecoveryChannelProductionReady(this.channel)) {
         throw new BadRequestException(
           `PASSWORD_RECOVERY_CHANNEL=${this.channel} is implemented but NOT production-ready. ` +
-            `Set PASSWORD_RECOVERY_ENABLED=false, or implement a real production provider and update isChannelProductionReady.`,
+            `${readiness.reason}. ` +
+            `Set PASSWORD_RECOVERY_ENABLED=false in production, or implement a real production provider and update the readiness table.`,
         );
       }
 
@@ -286,7 +303,7 @@ export class PasswordRecoveryConfig {
       `Password recovery: enabled=${this.enabled} channel=${this.channel} ` +
         `otpLength=${this.otpLength} otpTtl=${this.otpTtlSeconds}s ` +
         `resetTokenTtl=${this.resetTokenTtlSeconds}s cooldown=${this.resendCooldownSeconds}s ` +
-        `maxAttempts=${this.maxVerifyAttempts} revokeSessions=${this.revokeSessionsOnSuccess} ` +
+        `maxVerifyAttempts=${this.maxVerifyAttempts} revokeSessions=${this.revokeSessionsOnSuccess} ` +
         `devReturnOtp=${this.devReturnOtp} env=${this.nodeEnv}`,
     );
   }

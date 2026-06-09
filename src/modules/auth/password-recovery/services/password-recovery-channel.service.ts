@@ -3,35 +3,32 @@
  *
  * Resolves the configured channel at runtime and dispatches OTP delivery.
  * Adding a new provider (Email / WhatsApp / SMS) only requires:
- *   1. Implementing PasswordRecoveryChannelProvider.
- *   2. Registering it as a provider here and adding the mapping below.
- *   3. Updating the readiness tables (`isChannelImplemented` /
- *      `isChannelProductionReady`) below.
+ *   1. Implementing `PasswordRecoveryChannelProvider`.
+ *   2. Registering it as a provider in `password-recovery.module.ts`.
+ *   3. Adding a `case` for it in `resolveChannel` below.
+ *   4. Updating the readiness table in
+ *      `./password-recovery-channel-readiness.ts`.
  *
  * No use-case ever imports a specific channel — they only depend on this
  * service, which keeps the use-cases channel-agnostic.
  *
- * Phase 4-R4 — Provider Readiness Metadata
- * -----------------------------------------
- * The service now exposes two readiness predicates:
+ * ------------------------------------------------------------------------
+ * Readiness predicates (Phase 4-R4-R1)
+ * ------------------------------------------------------------------------
+ * `isChannelImplemented` and `isChannelProductionReady` are public
+ * helpers that delegate to the pure readiness registry in
+ * `./password-recovery-channel-readiness.ts`. They are kept on this
+ * service for callers that already inject it (and to preserve the
+ * Phase 4-R4 public API), but the source of truth lives in the
+ * pure helper.
  *
- *   - `isChannelImplemented(channel)` — does this channel have a real
- *     `PasswordRecoveryChannelProvider` registered? (CONSOLE and NOOP are
- *     implemented; EMAIL/WHATSAPP/SMS are not in this starter.)
+ * `PasswordRecoveryConfig` does NOT inject this service for
+ * readiness checks. It calls the pure helper directly. This breaks
+ * the circular DI dependency that Phase 4-R4 introduced.
  *
- *   - `isChannelProductionReady(channel)` — is this channel safe to use
- *     in a live deployment that is actually expected to deliver OTPs to
- *     real users? (No channel in this starter is production-ready, because
- *     no real vendor integration is implemented. CONSOLE writes to the
- *     server log only, NOOP discards, and EMAIL/WHATSAPP/SMS have no
- *     provider.)
- *
- * The boot guard in `PasswordRecoveryConfig` uses
- * `isChannelProductionReady` to refuse to start a production deployment
- * that has `PASSWORD_RECOVERY_ENABLED=true` without a real provider. This
- * is the R4 fix for the previous footgun where EMAIL/WHATSAPP/SMS could
- * be configured in production and `resolveChannel` would silently
- * return `null`, dropping the OTP.
+ * Phase 4-R4-R1 baseline: NO channel in this starter is
+ * production-ready. A real provider must be implemented and the
+ * readiness table updated before the channel can return `true`.
  */
 
 import { Injectable, Logger } from '@nestjs/common';
@@ -44,6 +41,10 @@ import {
   PASSWORD_RECOVERY_CHANNELS,
   PasswordRecoveryChannel,
 } from '../password-recovery.types';
+import {
+  isPasswordRecoveryChannelImplemented as helperIsImplemented,
+  isPasswordRecoveryChannelProductionReady as helperIsProductionReady,
+} from '../password-recovery-channel-readiness';
 
 @Injectable()
 export class PasswordRecoveryChannelService {
@@ -94,33 +95,24 @@ export class PasswordRecoveryChannelService {
   /**
    * Returns true when the channel has a registered
    * `PasswordRecoveryChannelProvider` in this build.
+   *
+   * Phase 4-R4-R1: delegates to the pure readiness helper. Kept on
+   * this service for backward compatibility with Phase 4-R4 callers.
    */
   isChannelImplemented(channel: PasswordRecoveryChannel): boolean {
-    switch (channel) {
-      case PASSWORD_RECOVERY_CHANNELS.NOOP:
-      case PASSWORD_RECOVERY_CHANNELS.CONSOLE:
-        return true;
-      case PASSWORD_RECOVERY_CHANNELS.EMAIL:
-      case PASSWORD_RECOVERY_CHANNELS.WHATSAPP:
-      case PASSWORD_RECOVERY_CHANNELS.SMS:
-      default:
-        return false;
-    }
+    return helperIsImplemented(channel);
   }
 
   /**
    * Returns true when the channel is safe to use in a live deployment
    * that needs to actually deliver OTPs to real users.
    *
-   * Phase 4-R4 baseline: NO channel in this starter is production-ready.
-   * A real provider must be implemented (and this method updated) before
-   * the channel can return `true`.
+   * Phase 4-R4-R1: delegates to the pure readiness helper. The
+   * helper is also used directly by `PasswordRecoveryConfig` so
+   * there is exactly one source of truth.
    */
-  isChannelProductionReady(_channel: PasswordRecoveryChannel): boolean {
-    // No vendor is wired up in this starter. Update this method when
-    // a real provider is added — e.g., return true for EMAIL once
-    // a SMTP / SES channel is implemented and registered.
-    return false;
+  isChannelProductionReady(channel: PasswordRecoveryChannel): boolean {
+    return helperIsProductionReady(channel);
   }
 
   private resolveChannel(
