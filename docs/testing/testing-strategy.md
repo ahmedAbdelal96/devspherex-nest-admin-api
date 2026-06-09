@@ -1,7 +1,7 @@
 # Testing Strategy
 
 **Date:** 2026-06-10
-**Phase:** 5
+**Phase:** 6
 
 ---
 
@@ -17,6 +17,14 @@ Tests are placed next to the files they test, following the NestJS convention:
 
 ```
 src/
+  common/
+    api-response/
+      api-response.interceptor.spec.ts       ← response wrapping
+    errors/
+      app-exception.filter.spec.ts            ← exception filter mapping
+      validation-error.formatter.spec.ts      ← validation formatting
+    request-context/
+      request-id.util.spec.ts                 ← request ID generation/reuse
   modules/auth/password-recovery/
     password-recovery-channel-readiness.spec.ts   ← channel readiness tests
     password-recovery-config.spec.ts               ← config boot rules

@@ -2,14 +2,19 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module';
-import { GlobalExceptionFilter } from './common/filters/http-exception.filter';
+import { GlobalExceptionFilter } from './common/errors/app-exception.filter';
+import { ApiResponseInterceptor } from './common/api-response/api-response.interceptor';
+import { requestIdMiddleware } from './common/request-context/request-id.middleware';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
 
   const app = await NestFactory.create(AppModule);
 
-  // Global validation pipe
+  // Request ID middleware — must run before any handler
+  app.use(requestIdMiddleware);
+
+  // Global validation pipe — safe defaults
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -18,11 +23,18 @@ async function bootstrap() {
       transformOptions: {
         enableImplicitConversion: true,
       },
+      validationError: {
+        target: false,
+        value: false,
+      },
     }),
   );
 
   // Global exception filter
   app.useGlobalFilters(new GlobalExceptionFilter());
+
+  // Global response interceptor
+  app.useGlobalInterceptors(new ApiResponseInterceptor());
 
   // Enable CORS
   app.enableCors();
