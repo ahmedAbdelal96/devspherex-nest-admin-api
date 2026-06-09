@@ -8,8 +8,6 @@
  * import { SYSTEM_PERMISSIONS } from '@common/rbac/system-permissions';
  */
 
-import type { SystemPermissionKey } from './system-permissions';
-
 // Types
 export type {
   PermissionAction,

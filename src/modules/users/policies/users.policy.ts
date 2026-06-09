@@ -28,7 +28,7 @@ export class UsersPolicy {
   async preventUnsafeRoleChange(
     targetUserId: string,
     currentUserId: string,
-    newRoleId: string,
+    _newRoleId: string,
   ): Promise<void> {
     if (targetUserId === currentUserId) {
       throw new ForbiddenException('Cannot change your own role');

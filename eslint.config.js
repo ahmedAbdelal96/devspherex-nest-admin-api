@@ -16,6 +16,14 @@ module.exports = [
       globals: {
         process: 'readonly',
         console: 'readonly',
+        jest: 'readonly',
+        beforeEach: 'readonly',
+        afterEach: 'readonly',
+        beforeAll: 'readonly',
+        afterAll: 'readonly',
+        describe: 'readonly',
+        it: 'readonly',
+        expect: 'readonly',
       },
     },
     plugins: {

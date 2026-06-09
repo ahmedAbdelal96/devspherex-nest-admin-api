@@ -16,6 +16,8 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
+    "test:smoke": "node scripts/smoke-boot.mjs",
+    "quality:check": "npm run lint && npm run build && npx prisma validate && npx ts-node scripts/validate-permissions.ts && npm run test",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio"
@@ -48,6 +50,7 @@
     "@nestjs/schematics": "^11.0.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/express": "^5.0.0",
+    "@types/jest": "^30.0.0",
     "@types/node": "^24.0.0",
     "@types/passport-jwt": "^4.0.1",
     "@types/swagger-ui-express": "^4.1.6",

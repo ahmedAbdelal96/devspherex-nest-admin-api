@@ -2,7 +2,6 @@ import { Injectable, ConflictException } from '@nestjs/common';
 import { UsersRepository } from '../repositories/users.repository';
 import { PasswordService } from '../../auth/services/password.service';
 import { CreateUserDto, CreateUserResponseDto } from '../dto/create-user.dto';
-import { UserResponseMapper } from '../mappers/user-response.mapper';
 
 @Injectable()
 export class CreateUserUseCase {

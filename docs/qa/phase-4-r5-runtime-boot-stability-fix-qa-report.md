@@ -169,3 +169,21 @@ No new issues introduced by this change.
 ## 7. Conclusion
 
 The application now boots successfully after the Phase 4 RBAC hardening and password recovery work. The Prisma 7 "client" engine requirement is satisfied via the `@prisma/adapter-pg` driver adapter, using the already-present `pg` package. All validation commands pass, and no regressions were introduced.
+
+---
+
+## R6 Addendum — Tests& Quality Gate Foundation (2026-06-10)
+
+Phase 5 subsequently added a real testing foundation and quality gate. See
+[phase-5-tests-quality-gate-foundation-qa-report.md](phase-5-tests-quality-gate-foundation-qa-report.md)
+for the full Phase 5 QA report. Summary:
+
+| Item | Detail |
+|---|---|
+| **Problem** | `npm run test` returned "No tests found" — zero spec files existed |
+| **Fix applied** | Added 15 spec files covering Password Recovery, RBAC, and Auth/Token logic |
+| **New scripts** | `test:smoke` (smoke-boot.mjs), `quality:check` (full chain) |
+| **Lint cleanup** | Fixed all 6 pre-existing warnings (unused imports/args) |
+| **Test result** | `npm run test` exits 0 with real tests running |
+| **Coverage** | `npm run test:cov` reports coverage |
+| **Commit** | `test: add quality gate foundation` |

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { RolesRepository } from '../repositories/roles.repository';
 import { RolesPolicy } from '../policies/roles.policy';
 import { UpdateRoleDto } from '../dto/update-role.dto';
