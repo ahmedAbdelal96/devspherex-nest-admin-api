@@ -5,6 +5,10 @@ export class CreateRoleDto {
   @MaxLength(100)
   name: string;
 
+  @IsString()
+  @MaxLength(100)
+  slug: string;
+
   @IsOptional()
   @IsString()
   @MaxLength(500)
@@ -19,12 +23,13 @@ export class CreateRoleDto {
 export class CreateRoleResponseDto {
   id: string;
   name: string;
+  slug: string;
   description: string | null;
   isSystem: boolean;
   permissions: Array<{
     id: string;
-    name: string;
-    groupName: string;
+    key: string;
+    group: string;
   }>;
   createdAt: Date;
 }

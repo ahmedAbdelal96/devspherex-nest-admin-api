@@ -14,15 +14,16 @@ export class DuplicateRoleUseCase {
       throw new NotFoundException('Source role not found');
     }
 
-    const existingRole = await this.rolesRepository.findByName(dto.name);
+    const existingRole = await this.rolesRepository.findBySlug(dto.slug);
     if (existingRole) {
-      throw new ConflictException('Role with this name already exists');
+      throw new ConflictException('Role with this slug already exists');
     }
 
     const permissionIds = sourceRole.permissions.map((rp) => rp.permission.id);
 
     const newRole = await this.rolesRepository.create({
       name: dto.name,
+      slug: dto.slug,
       description: sourceRole.description
         ? `Duplicate of ${sourceRole.name}`
  : undefined,

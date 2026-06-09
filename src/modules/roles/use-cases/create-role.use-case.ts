@@ -8,14 +8,15 @@ export class CreateRoleUseCase {
   constructor(private readonly rolesRepository: RolesRepository) {}
 
   async execute(dto: CreateRoleDto): Promise<CreateRoleResponseDto> {
-    const existingRole = await this.rolesRepository.findByName(dto.name);
+    const existingRole = await this.rolesRepository.findBySlug(dto.slug);
 
     if (existingRole) {
-      throw new ConflictException('Role with this name already exists');
+      throw new ConflictException('Role with this slug already exists');
     }
 
     const role = await this.rolesRepository.create({
       name: dto.name,
+      slug: dto.slug,
       description: dto.description,
       permissionIds: dto.permissionIds,
     });

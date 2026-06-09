@@ -6,32 +6,41 @@ import { RefreshToken } from '@prisma/client';
 export class RefreshTokensRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(data: { token: string; userId: string; expiresAt: Date }): Promise<RefreshToken> {
+  async create(data: {
+    tokenHash: string;
+    userId: string;
+    jti: string;
+    familyId: string;
+    expiresAt: Date;
+  }): Promise<RefreshToken> {
     return this.prisma.refreshToken.create({
       data,
     });
   }
 
-  async findByToken(token: string): Promise<RefreshToken | null> {
+  async findByJti(jti: string): Promise<RefreshToken | null> {
     return this.prisma.refreshToken.findUnique({
-      where: { token },
+      where: { jti },
     });
   }
 
-  async findValidToken(token: string): Promise<RefreshToken | null> {
+  async findValidToken(jti: string): Promise<RefreshToken | null> {
     return this.prisma.refreshToken.findFirst({
       where: {
-        token,
+        jti,
         expiresAt: { gt: new Date() },
         revokedAt: null,
       },
     });
   }
 
-  async revoke(token: string): Promise<void> {
+  async revoke(tokenId: string, replacedByTokenId?: string): Promise<void> {
     await this.prisma.refreshToken.update({
-      where: { token },
-      data: { revokedAt: new Date() },
+      where: { id: tokenId },
+      data: {
+        revokedAt: new Date(),
+        replacedByTokenId,
+      },
     });
   }
 
@@ -49,5 +58,11 @@ export class RefreshTokensRepository {
       },
     });
     return result.count;
+  }
+
+  async findById(id: string): Promise<RefreshToken | null> {
+    return this.prisma.refreshToken.findUnique({
+      where: { id },
+    });
   }
 }

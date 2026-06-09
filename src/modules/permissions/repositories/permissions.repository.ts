@@ -12,32 +12,33 @@ export class PermissionsRepository {
     });
   }
 
-  async findByName(name: string): Promise<Permission | null> {
+  async findByKey(key: string): Promise<Permission | null> {
     return this.prisma.permission.findUnique({
-      where: { name },
+      where: { key },
     });
   }
 
   async findAll(params: {
     search?: string;
-    groupName?: string;
+    group?: string;
     page: number;
     limit: number;
   }): Promise<{ data: Permission[]; total: number }> {
-    const { search, groupName, page, limit } = params;
+    const { search, group, page, limit } = params;
     const skip = (page - 1) * limit;
 
     const where: Prisma.PermissionWhereInput = {};
 
     if (search) {
       where.OR = [
-        { name: { contains: search, mode: 'insensitive' } },
+        { key: { contains: search, mode: 'insensitive' } },
+        { label: { contains: search, mode: 'insensitive' } },
         { description: { contains: search, mode: 'insensitive' } },
       ];
     }
 
-    if (groupName) {
-      where.groupName = groupName;
+    if (group) {
+      where.group = group;
     }
 
     const [data, total] = await Promise.all([
@@ -45,7 +46,7 @@ export class PermissionsRepository {
         where,
         skip,
         take: limit,
-        orderBy: [{ groupName: 'asc' }, { name: 'asc' }],
+        orderBy: [{ group: 'asc' }, { key: 'asc' }],
       }),
       this.prisma.permission.count({ where }),
     ]);
@@ -55,7 +56,7 @@ export class PermissionsRepository {
 
   async findAllGrouped(): Promise<Permission[]> {
     return this.prisma.permission.findMany({
-      orderBy: [{ groupName: 'asc' }, { name: 'asc' }],
+      orderBy: [{ group: 'asc' }, { key: 'asc' }],
     });
   }
 

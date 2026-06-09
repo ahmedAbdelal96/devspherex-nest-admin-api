@@ -13,7 +13,8 @@ export class GetUserByIdUseCase {
       throw new NotFoundException('User not found');
     }
 
-    const rolePermissions = user.role?.permissions.map((rp) => rp.permission.name) || [];
+    // Permission key is now stored as 'key' not 'name'
+    const rolePermissions = user.role?.permissions.map((rp) => rp.permission.key) || [];
 
     return UserResponseMapper.toResponseWithPermissions(user, rolePermissions);
   }

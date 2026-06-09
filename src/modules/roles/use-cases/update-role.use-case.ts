@@ -19,10 +19,8 @@ export class UpdateRoleUseCase {
     }
 
     if (dto.name && dto.name !== role.name) {
-      const existingRole = await this.rolesRepository.findByName(dto.name);
-      if (existingRole) {
-        throw new ConflictException('Role name already in use');
-      }
+      // For name changes, we don't check for duplicates by name since name isn't unique
+      // Slug is the unique identifier
     }
 
     if (dto.permissionIds !== undefined) {

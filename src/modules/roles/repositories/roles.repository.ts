@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../common/database/prisma.service';
-import { Role, Prisma, Permission } from '@prisma/client';
+import { Role, RoleStatus, Prisma, Permission } from '@prisma/client';
 
 type RoleWithPermissions = Role & {
   permissions: Array<{
@@ -14,6 +14,7 @@ export class RolesRepository {
 
   async create(data: {
     name: string;
+    slug: string;
     description?: string;
     permissionIds?: string[];
   }): Promise<RoleWithPermissions> {
@@ -21,7 +22,9 @@ export class RolesRepository {
     const role = await this.prisma.role.create({
       data: {
         name: data.name,
+        slug: data.slug,
         description: data.description,
+        status: 'ACTIVE' as RoleStatus,
       },
     });
 
@@ -52,9 +55,9 @@ export class RolesRepository {
     }) as Promise<RoleWithPermissions | null>;
   }
 
-  async findByName(name: string): Promise<RoleWithPermissions | null> {
+  async findBySlug(slug: string): Promise<RoleWithPermissions | null> {
     return this.prisma.role.findUnique({
-      where: { name },
+      where: { slug },
       include: {
         permissions: {
           include: {
@@ -67,10 +70,11 @@ export class RolesRepository {
 
   async findAll(params: {
     search?: string;
+    status?: RoleStatus;
     page: number;
     limit: number;
   }): Promise<{ data: RoleWithPermissions[]; total: number }> {
-    const { search, page, limit } = params;
+    const { search, status, page, limit } = params;
     const skip = (page - 1) * limit;
 
     const where: Prisma.RoleWhereInput = {};
@@ -78,8 +82,13 @@ export class RolesRepository {
     if (search) {
       where.OR = [
         { name: { contains: search, mode: 'insensitive' } },
+        { slug: { contains: search, mode: 'insensitive' } },
         { description: { contains: search, mode: 'insensitive' } },
       ];
+    }
+
+    if (status) {
+      where.status = status;
     }
 
     const [data, total] = await Promise.all([
@@ -102,7 +111,10 @@ export class RolesRepository {
     return { data: data as RoleWithPermissions[], total };
   }
 
-  async update(id: string, data: Prisma.RoleUpdateInput): Promise<RoleWithPermissions> {
+  async update(
+    id: string,
+    data: Prisma.RoleUpdateInput,
+  ): Promise<RoleWithPermissions> {
     return this.prisma.role.update({
       where: { id },
       data,

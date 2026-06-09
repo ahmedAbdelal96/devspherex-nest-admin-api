@@ -16,8 +16,8 @@ export class GetUserEffectivePermissionsUseCase {
       throw new NotFoundException('User not found');
     }
 
-    // Get role permissions
-    const rolePermissions = user.role?.permissions.map((rp) => rp.permission.name) || [];
+    // Permission key is now stored as 'key' not 'name'
+    const rolePermissions = user.role?.permissions.map((rp) => rp.permission.key) || [];
 
     // Get user permission overrides
     const overridePermissions = await this.usersRepository.getPermissionOverrides(userId);
@@ -28,7 +28,7 @@ export class GetUserEffectivePermissionsUseCase {
         const perm = await this.prisma.permission.findUnique({
           where: { id: permId },
         });
-        return perm?.name || null;
+        return perm?.key || null;
       }),
     );
 

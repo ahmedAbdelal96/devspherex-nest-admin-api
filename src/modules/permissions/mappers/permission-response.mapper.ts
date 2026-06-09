@@ -2,9 +2,13 @@ import { Permission } from '@prisma/client';
 
 export interface PermissionResponse {
   id: string;
-  name: string;
+  key: string;
+  resource: string;
+  action: string;
+  label: string;
   description: string | null;
-  groupName: string;
+  group: string;
+  isSystem: boolean;
   createdAt: Date;
 }
 
@@ -12,9 +16,13 @@ export class PermissionResponseMapper {
   static toResponse(permission: Permission): PermissionResponse {
     return {
       id: permission.id,
-      name: permission.name,
+      key: permission.key,
+      resource: permission.resource,
+      action: permission.action,
+      label: permission.label,
       description: permission.description,
-      groupName: permission.groupName,
+      group: permission.group,
+      isSystem: permission.isSystem,
       createdAt: permission.createdAt,
     };
   }

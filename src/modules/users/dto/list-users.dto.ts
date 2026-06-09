@@ -34,8 +34,7 @@ export class PaginatedUsersResponseDto {
   data: Array<{
     id: string;
     email: string;
-    firstName: string;
-    lastName: string;
+    name: string;
     status: UserStatus;
     role: {
       id: string;

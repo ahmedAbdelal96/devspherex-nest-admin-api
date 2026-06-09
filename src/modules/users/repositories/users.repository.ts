@@ -20,8 +20,7 @@ export class UsersRepository {
   async create(data: {
     email: string;
     passwordHash: string;
-    firstName: string;
-    lastName: string;
+    name: string;
     roleId?: string;
   }): Promise<UserWithRole> {
     return this.prisma.user.create({
@@ -89,8 +88,7 @@ export class UsersRepository {
     if (search) {
       where.OR = [
         { email: { contains: search, mode: 'insensitive' } },
-        { firstName: { contains: search, mode: 'insensitive' } },
-        { lastName: { contains: search, mode: 'insensitive' } },
+        { name: { contains: search, mode: 'insensitive' } },
       ];
     }
 
@@ -201,7 +199,11 @@ export class UsersRepository {
     return overrides.map((o) => o.permissionId);
   }
 
-  async setPermissionOverrides(userId: string, permissionIds: string[]): Promise<void> {
+  async setPermissionOverrides(
+    userId: string,
+    permissionIds: string[],
+    effects: string[] = [],
+  ): Promise<void> {
     // Remove existing overrides
     await this.prisma.userPermissionOverride.deleteMany({
       where: { userId },
@@ -210,11 +212,19 @@ export class UsersRepository {
     // Add new overrides
     if (permissionIds.length > 0) {
       await this.prisma.userPermissionOverride.createMany({
-        data: permissionIds.map((permissionId) => ({
+        data: permissionIds.map((permissionId, index) => ({
           userId,
           permissionId,
+          effect: (effects[index] as 'ALLOW' | 'DENY') || 'ALLOW',
         })),
       });
     }
+  }
+
+  async incrementTokenVersion(id: string): Promise<void> {
+    await this.prisma.user.update({
+      where: { id },
+      data: { tokenVersion: { increment: 1 } },
+    });
   }
 }

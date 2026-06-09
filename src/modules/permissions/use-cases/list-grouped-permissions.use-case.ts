@@ -9,24 +9,25 @@ export class ListGroupedPermissionsUseCase {
   async execute(): Promise<ListGroupedPermissionsResponseDto> {
     const permissions = await this.permissionsRepository.findAllGrouped();
 
-    // Group permissions by groupName
+    // Group permissions by group
     const grouped = permissions.reduce(
       (acc, perm) => {
-        const group = acc[perm.groupName] || [];
+        const group = acc[perm.group] || [];
         group.push({
           id: perm.id,
-          name: perm.name,
+          key: perm.key,
+          label: perm.label,
           description: perm.description,
         });
-        acc[perm.groupName] = group;
+        acc[perm.group] = group;
         return acc;
       },
-      {} as Record<string, Array<{ id: string; name: string; description: string | null }>>,
+      {} as Record<string, Array<{ id: string; key: string; label: string; description: string | null }>>,
     );
 
     return {
-      groups: Object.entries(grouped).map(([groupName, permissions]) => ({
-        groupName,
+      groups: Object.entries(grouped).map(([group, permissions]) => ({
+        group,
         permissions,
       })),
     };

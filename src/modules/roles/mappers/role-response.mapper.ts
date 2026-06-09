@@ -3,12 +3,17 @@ import { Role, Permission } from '@prisma/client';
 export interface RoleResponse {
   id: string;
   name: string;
+  slug: string;
   description: string | null;
+  status: Role['status'];
   isSystem: boolean;
   permissions: Array<{
     id: string;
-    name: string;
-    groupName: string;
+    key: string;
+    resource: string;
+    action: string;
+    label: string;
+    group: string;
     description: string | null;
   }>;
   createdAt: Date;
@@ -17,7 +22,7 @@ export interface RoleResponse {
 
 export class RoleResponseMapper {
   static toResponse(
-    role: Role& {
+    role: Role & {
       permissions: Array<{
         permission: Permission;
       }>;
@@ -26,12 +31,17 @@ export class RoleResponseMapper {
     return {
       id: role.id,
       name: role.name,
+      slug: role.slug,
       description: role.description,
+      status: role.status,
       isSystem: role.isSystem,
       permissions: role.permissions.map((rp) => ({
         id: rp.permission.id,
-        name: rp.permission.name,
-        groupName: rp.permission.groupName,
+        key: rp.permission.key,
+        resource: rp.permission.resource,
+        action: rp.permission.action,
+        label: rp.permission.label,
+        group: rp.permission.group,
         description: rp.permission.description,
       })),
       createdAt: role.createdAt,

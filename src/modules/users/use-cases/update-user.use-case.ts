@@ -23,8 +23,7 @@ export class UpdateUserUseCase {
 
     const updatedUser = await this.usersRepository.update(userId, {
       ...(dto.email && { email: dto.email }),
-      ...(dto.firstName && { firstName: dto.firstName }),
-      ...(dto.lastName && { lastName: dto.lastName }),
+      ...(dto.name && { name: dto.name }),
       ...(dto.roleId !== undefined && { roleId: dto.roleId }),
     });
 

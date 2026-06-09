@@ -3,14 +3,14 @@ import { IsOptional, IsString, IsObject, IsUUID } from 'class-validator';
 export class CreateAuditLogDto {
   @IsOptional()
   @IsUUID()
-  userId?: string;
+  actorId?: string;
 
   @IsString()
   action: string;
 
   @IsOptional()
   @IsString()
-  entityType?: string;
+  entity?: string;
 
   @IsOptional()
   @IsString()
@@ -22,9 +22,13 @@ export class CreateAuditLogDto {
 
   @IsOptional()
   @IsString()
-  ipAddress?: string;
+  ip?: string;
 
   @IsOptional()
   @IsString()
   userAgent?: string;
+
+  @IsOptional()
+  @IsString()
+  requestId?: string;
 }

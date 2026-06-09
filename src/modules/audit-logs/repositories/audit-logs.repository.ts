@@ -7,52 +7,56 @@ export class AuditLogsRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(data: {
-    userId?: string;
+    actorId?: string;
     action: string;
-    entityType?: string;
+    entity?: string;
     entityId?: string;
     metadata?: Record<string, unknown>;
-    ipAddress?: string;
+    ip?: string;
     userAgent?: string;
+    requestId?: string;
   }): Promise<AuditLog> {
     return this.prisma.auditLog.create({
       data: {
-        userId: data.userId ?? null,
+        actorId: data.actorId ?? null,
         action: data.action,
-        entityType: data.entityType ?? null,
+        entity: data.entity ?? null,
         entityId: data.entityId ?? null,
-        metadata: data.metadata !== undefined ? (data.metadata as Prisma.InputJsonValue) : undefined,
-        ipAddress: data.ipAddress ?? null,
+        metadata: data.metadata !== undefined
+          ? (data.metadata as Prisma.InputJsonValue)
+          : undefined,
+        ip: data.ip ?? null,
         userAgent: data.userAgent ?? null,
+        requestId: data.requestId ?? null,
       },
     });
   }
 
   async findAll(params: {
-    userId?: string;
+    actorId?: string;
     action?: string;
-    entityType?: string;
+    entity?: string;
     entityId?: string;
     startDate?: Date;
     endDate?: Date;
     page: number;
     limit: number;
   }): Promise<{ data: AuditLog[]; total: number }> {
-    const { userId, action, entityType, entityId, startDate, endDate, page, limit } = params;
+    const { actorId, action, entity, entityId, startDate, endDate, page, limit } = params;
     const skip = (page - 1) * limit;
 
     const where: Prisma.AuditLogWhereInput = {};
 
-    if (userId) {
-      where.userId = userId;
+    if (actorId) {
+      where.actorId = actorId;
     }
 
     if (action) {
       where.action = action;
     }
 
-    if (entityType) {
-      where.entityType = entityType;
+    if (entity) {
+      where.entity = entity;
     }
 
     if (entityId) {

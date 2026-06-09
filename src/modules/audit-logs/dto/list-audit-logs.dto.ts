@@ -1,10 +1,17 @@
-import { IsOptional, IsString, IsInt, Min, Max, IsDateString } from 'class-validator';
-import { Type } from 'class-transformer';
+import {
+  IsOptional,
+  IsString,
+  IsInt,
+  Min,
+  Max,
+  IsDateString,
+} from "class-validator";
+import { Type } from "class-transformer";
 
 export class ListAuditLogsQueryDto {
   @IsOptional()
   @IsString()
-  userId?: string;
+  actorId?: string;
 
   @IsOptional()
   @IsString()
@@ -12,7 +19,7 @@ export class ListAuditLogsQueryDto {
 
   @IsOptional()
   @IsString()
-  entityType?: string;
+  entity?: string;
 
   @IsOptional()
   @IsString()
@@ -44,13 +51,14 @@ export class ListAuditLogsQueryDto {
 export class ListAuditLogsResponseDto {
   data: Array<{
     id: string;
-    userId: string | null;
+    actorId: string | null;
     action: string;
-    entityType: string | null;
+    entity: string | null;
     entityId: string | null;
     metadata: Record<string, unknown> | null;
-    ipAddress: string | null;
+    ip: string | null;
     userAgent: string | null;
+    requestId: string | null;
     createdAt: Date;
   }>;
   total: number;

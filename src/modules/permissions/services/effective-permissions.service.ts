@@ -30,8 +30,9 @@ export class EffectivePermissionsService {
       return [];
     }
 
-    const rolePermissions = user.role?.permissions.map((rp) => rp.permission.name) || [];
-    const overridePermissions = user.permissionOverrides.map((up) => up.permission.name);
+    // Permission key is now stored as 'key' not 'name'
+    const rolePermissions = user.role?.permissions.map((rp) => rp.permission.key) || [];
+    const overridePermissions = user.permissionOverrides.map((up) => up.permission.key);
 
     return [...new Set([...rolePermissions, ...overridePermissions])];
   }
@@ -52,6 +53,6 @@ export class EffectivePermissionsService {
       return [];
     }
 
-    return role.permissions.map((rp) => rp.permission.name);
+    return role.permissions.map((rp) => rp.permission.key);
   }
 }

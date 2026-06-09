@@ -13,7 +13,7 @@ export class ListPermissionsUseCase {
 
     const { data, total } = await this.permissionsRepository.findAll({
       search: query.search,
-      groupName: query.groupName,
+      group: query.group,
       page,
       limit,
     });

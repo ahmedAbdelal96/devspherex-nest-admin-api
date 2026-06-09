@@ -1,4 +1,5 @@
 import { Injectable, ConflictException } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../../../common/database/prisma.service';
 import { PasswordService } from '../services/password.service';
 import { TokenService } from '../services/token.service';
@@ -32,8 +33,7 @@ export class RegisterUseCase {
       data: {
         email: dto.email,
         passwordHash,
-        firstName: dto.firstName,
-        lastName: dto.lastName,
+        name: dto.name,
       },
       include: {
         role: true,
@@ -44,14 +44,19 @@ export class RegisterUseCase {
       sub: user.id,
       email: user.email,
       roleId: user.roleId,
+      tokenVersion: user.tokenVersion,
     });
 
     const refreshToken = await this.refreshTokenService.generateRefreshToken();
     const expiresAt = this.refreshTokenService.getRefreshTokenExpiry();
+    const jti = randomUUID();
+    const familyId = randomUUID();
 
     await this.refreshTokensRepository.create({
-      token: refreshToken,
+      tokenHash: refreshToken,
       userId: user.id,
+      jti,
+      familyId,
       expiresAt,
     });
 
@@ -62,8 +67,7 @@ export class RegisterUseCase {
       user: {
         id: user.id,
         email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
+        name: user.name,
       },
     };
   }

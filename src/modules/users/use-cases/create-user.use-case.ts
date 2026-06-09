@@ -23,16 +23,14 @@ export class CreateUserUseCase {
     const user = await this.usersRepository.create({
       email: dto.email,
       passwordHash,
-      firstName: dto.firstName,
-      lastName: dto.lastName,
+      name: dto.name,
       roleId: dto.roleId,
     });
 
     return {
       id: user.id,
       email: user.email,
-      firstName: user.firstName,
-      lastName: user.lastName,
+      name: user.name,
       status: user.status,
       role: user.role
         ? { id: user.role.id, name: user.role.name }

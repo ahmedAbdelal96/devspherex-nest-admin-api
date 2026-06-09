@@ -13,12 +13,7 @@ export class CreateUserDto {
   @IsString()
   @MinLength(1)
   @MaxLength(100)
-  firstName: string;
-
-  @IsString()
-  @MinLength(1)
-  @MaxLength(100)
-  lastName: string;
+  name: string;
 
   @IsOptional()
   @IsString()
@@ -29,8 +24,7 @@ export class CreateUserDto {
 export class CreateUserResponseDto {
   id: string;
   email: string;
-  firstName: string;
-  lastName: string;
+  name: string;
   status: UserStatus;
   role: {
     id: string;

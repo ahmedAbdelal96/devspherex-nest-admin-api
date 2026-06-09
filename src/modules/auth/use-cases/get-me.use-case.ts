@@ -4,8 +4,7 @@ import { PrismaService } from '../../../common/database/prisma.service';
 export interface CurrentUserData {
   id: string;
   email: string;
-  firstName: string;
-  lastName: string;
+  name: string;
   roleId: string | null;
   status: string;
   role: {
@@ -46,15 +45,14 @@ export class GetMeUseCase {
     }
 
     // Collect all permissions (role + overrides)
-    const rolePermissions = user.role?.permissions.map((rp) => rp.permission.name) || [];
-    const overridePermissions = user.permissionOverrides.map((up) => up.permission.name);
+    const rolePermissions = user.role?.permissions.map((rp) => rp.permission.key) || [];
+    const overridePermissions = user.permissionOverrides.map((up) => up.permission.key);
     const allPermissions = [...new Set([...rolePermissions, ...overridePermissions])];
 
     return {
       id: user.id,
       email: user.email,
-      firstName: user.firstName,
-      lastName: user.lastName,
+      name: user.name,
       roleId: user.roleId,
       status: user.status,
       role: user.role

@@ -8,13 +8,14 @@ export class CreateAuditLogUseCase {
 
   async execute(dto: CreateAuditLogDto) {
     return this.auditLogsRepository.create({
-      userId: dto.userId,
+      actorId: dto.actorId,
       action: dto.action,
-      entityType: dto.entityType,
+      entity: dto.entity,
       entityId: dto.entityId,
       metadata: dto.metadata,
-      ipAddress: dto.ipAddress,
+      ip: dto.ip,
       userAgent: dto.userAgent,
+      requestId: dto.requestId,
     });
   }
 }

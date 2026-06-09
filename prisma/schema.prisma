@@ -1,5 +1,6 @@
 // Prisma schema for NestJS Admin API
 // Practical Clean Modular Architecture - Normalized Database Structure
+// Phase 1B - Core Database Contract
 
 generator client {
   provider = "prisma-client-js"
@@ -9,141 +10,246 @@ datasource db {
   provider = "postgresql"
 }
 
-// Users table
-model User {
-  id String   @id @default(uuid())
-  email        String   @unique
-  passwordHash String   @map("password_hash")
-  firstName    String   @map("first_name")
-  lastName     String   @map("last_name")
-  status       UserStatus @default(ACTIVE)
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  role Role? @relation(fields: [roleId], references: [id])
-  roleId                   String?                  @map("role_id")
-  permissionOverrides      UserPermissionOverride[] // Custom permission overrides
-  refreshTokens            RefreshToken[]
-  auditLogs AuditLog[]
-
-  @@map("users")
-  @@index([email])
-  @@index([status])
-  @@index([roleId])
-}
+// ============================================
+// ENUMS
+// ============================================
 
 enum UserStatus {
   ACTIVE
-  INACTIVE
-  SUSPENDED
+  DISABLED
+  PENDING
 }
 
-// Roles table
+enum RoleStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum PermissionOverrideEffect {
+  ALLOW
+  DENY
+}
+
+// ============================================
+// USER MODEL
+// ============================================
+
+model User {
+  id           String     @id @default(uuid())
+  name         String     @map("name")
+  email        String     @unique @map("email")
+  passwordHash String     @map("password_hash")
+  avatarUrl    String?    @map("avatar_url")
+  phone        String?    @map("phone")
+  status       UserStatus @default(ACTIVE)
+  roleId       String?    @map("role_id")
+  tokenVersion Int        @default(1) @map("token_version")
+  lastLoginAt  DateTime?  @map("last_login_at")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+  deletedAt    DateTime?  @map("deleted_at")
+
+  // Relations
+  role                Role?                    @relation(fields: [roleId], references: [id])
+  permissionOverrides UserPermissionOverride[]
+  refreshTokens       RefreshToken[]
+  auditLogs           AuditLog[]
+  apiRequestLogs      ApiRequestLog[]
+
+  @@index([email])
+  @@index([status])
+  @@index([roleId])
+  @@index([deletedAt])
+  @@index([createdAt])
+  @@index([status, roleId, createdAt])
+  @@map("users")
+}
+
+// ============================================
+// ROLE MODEL
+// ============================================
+
 model Role {
-  id String   @id @default(uuid())
-  name        String   @unique
-  description String?
-  isSystem    Boolean  @default(false) @map("is_system") // System roles cannot be deleted
+  id          String     @id @default(uuid())
+  name        String     @unique @map("name")
+  slug        String     @unique @map("slug")
+  description String?    @map("description")
+  status      RoleStatus @default(ACTIVE)
+  isSystem    Boolean    @default(false) @map("is_system")
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+  deletedAt   DateTime?  @map("deleted_at")
+
+  // Relations
+  permissions RolePermission[]
+  users       User[]
+
+  @@index([slug])
+  @@index([status])
+  @@index([isSystem])
+  @@index([deletedAt])
+  @@index([createdAt])
+  @@map("roles")
+}
+
+// ============================================
+// PERMISSION MODEL
+// ============================================
+
+model Permission {
+  id          String   @id @default(uuid())
+  key         String   @unique @map("key") // e.g., "users.read", "roles.create"
+  resource    String   @map("resource") // e.g., "users", "roles"
+  action      String   @map("action") // e.g., "read", "create", "update", "delete"
+  label       String   @map("label") // Human-readable label
+  description String?  @map("description")
+  group       String   @map("group") // e.g., "Users", "Roles", "System"
+  isSystem    Boolean  @default(true) @map("is_system")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
   // Relations
-  permissions RolePermission[]
-  users             User[]
-
-  @@map("roles")
-  @@index([isSystem])
-}
-
-// Permissions table
-model Permission {
-  id          String   @id @default(uuid())
-  name        String   @unique
-  description String?
-  groupName   String   @map("group_name") // e.g., "users", "roles", "audit_logs"
-  createdAt   DateTime @default(now()) @map("created_at")
-
-  // Relations
-  rolePermissions       RolePermission[]
+  rolePermissions         RolePermission[]
   userPermissionOverrides UserPermissionOverride[]
 
+  @@index([key])
+  @@index([resource])
+  @@index([action])
+  @@index([group])
+  @@index([resource, action])
   @@map("permissions")
-  @@index([groupName])
-  @@index([name])
 }
 
-// Role-Permission join table (normalized relational structure)
+// ============================================
+// ROLE-PERMISSION JOIN TABLE
+// ============================================
+
 model RolePermission {
-  id String   @id @default(uuid())
-  roleId     String   @map("role_id")
-  permissionId String @map("permission_id")
-  createdAt  DateTime @default(now()) @map("created_at")
+  id           String   @id @default(uuid())
+  roleId       String   @map("role_id")
+  permissionId String   @map("permission_id")
+  createdAt    DateTime @default(now()) @map("created_at")
 
   // Relations
   role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
   permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
 
   @@unique([roleId, permissionId])
-  @@map("role_permissions")
   @@index([roleId])
   @@index([permissionId])
+  @@map("role_permissions")
 }
 
-// User Permission Overrides (custom per-user permissions beyond their role)
+// ============================================
+// USER PERMISSION OVERRIDE MODEL
+// ============================================
+
 model UserPermissionOverride {
-  id           String   @id @default(uuid())
-  userId       String   @map("user_id")
-  permissionId String   @map("permission_id")
-  createdAt    DateTime @default(now()) @map("created_at")
+  id           String                   @id @default(uuid())
+  userId       String                   @map("user_id")
+  permissionId String                   @map("permission_id")
+  effect       PermissionOverrideEffect @map("effect")
+  createdAt    DateTime                 @default(now()) @map("created_at")
 
   // Relations
   user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
 
   @@unique([userId, permissionId])
-  @@map("user_permission_overrides")
   @@index([userId])
   @@index([permissionId])
+  @@index([effect])
+  @@map("user_permission_overrides")
 }
 
-// Refresh Tokens table
+// ============================================
+// REFRESH TOKEN MODEL
+// ============================================
+
 model RefreshToken {
-  id        String   @id @default(uuid())
-  token     String   @unique
-  userId    String   @map("user_id")
-  expiresAt DateTime @map("expires_at")
-  createdAt DateTime @default(now()) @map("created_at")
-  revokedAt DateTime? @map("revoked_at")
+  id                String    @id @default(uuid())
+  userId            String    @map("user_id")
+  tokenHash         String    @unique @map("token_hash")
+  jti               String    @unique @map("jti") // Unique token ID for tracking
+  familyId          String    @map("family_id") // For token reuse detection
+  expiresAt         DateTime  @map("expires_at")
+  revokedAt         DateTime? @map("revoked_at")
+  replacedByTokenId String?   @map("replaced_by_token_id")
+  createdAt         DateTime  @default(now()) @map("created_at")
 
   // Relations
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@map("refresh_tokens")
-  @@index([token])
+  @@index([jti])
   @@index([userId])
+  @@index([familyId])
   @@index([expiresAt])
+  @@index([revokedAt])
+  @@index([userId, revokedAt])
+  @@map("refresh_tokens")
 }
 
-// Audit Logs table
+// ============================================
+// AUDIT LOG MODEL
+// ============================================
+
 model AuditLog {
-  id         String   @id @default(uuid())
-  userId     String?  @map("user_id")
-  action     String
-  entityType String?  @map("entity_type")
-  entityId   String?  @map("entity_id")
-  metadata Json?
-  ipAddress  String?  @map("ip_address")
-  userAgent  String?  @map("user_agent")
-  createdAt  DateTime @default(now()) @map("created_at")
+  id        String   @id @default(uuid())
+  actorId   String?  @map("actor_id")
+  action    String   @map("action")
+  entity    String?  @map("entity")
+  entityId  String?  @map("entity_id")
+  metadata  Json?    @map("metadata")
+  ip        String?  @map("ip")
+  userAgent String?  @map("user_agent")
+  requestId String?  @map("request_id")
+  createdAt DateTime @default(now()) @map("created_at")
 
   // Relations
-  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
 
-  @@map("audit_logs")
-  @@index([userId])
+  @@index([actorId])
   @@index([action])
-  @@index([entityType])
+  @@index([entity])
   @@index([entityId])
   @@index([createdAt])
+  @@index([entity, entityId, createdAt])
+  @@index([action, createdAt])
+  @@index([actorId, createdAt])
+  @@map("audit_logs")
+}
+
+// ============================================
+// API REQUEST LOG MODEL
+// ============================================
+
+model ApiRequestLog {
+  id            String   @id @default(uuid())
+  requestId     String   @unique @map("request_id")
+  actorId       String?  @map("actor_id")
+  method        String   @map("method")
+  path          String   @map("path")
+  statusCode    Int      @map("status_code")
+  durationMs    Int      @map("duration_ms")
+  ip            String?  @map("ip")
+  userAgent     String?  @map("user_agent")
+  requestBody   Json?    @map("request_body")
+  query         Json?    @map("query")
+  params        Json?    @map("params")
+  responseError Json?    @map("response_error")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  // Relations
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([requestId])
+  @@index([actorId])
+  @@index([path])
+  @@index([statusCode])
+  @@index([durationMs])
+  @@index([createdAt])
+  @@index([path, createdAt])
+  @@index([statusCode, createdAt])
+  @@index([actorId, createdAt])
+  @@map("api_request_logs")
 }

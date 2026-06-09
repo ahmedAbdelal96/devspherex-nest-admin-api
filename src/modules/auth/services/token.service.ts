@@ -6,6 +6,7 @@ export interface JwtPayload {
   sub: string;
   email: string;
   roleId: string | null;
+  tokenVersion: number;
 }
 
 @Injectable()

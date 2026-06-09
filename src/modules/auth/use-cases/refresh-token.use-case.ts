@@ -5,6 +5,8 @@ import { RefreshTokenService } from '../services/refresh-token.service';
 import { RefreshTokensRepository } from '../repositories/refresh-tokens.repository';
 import { RefreshTokenResponseDto } from '../dto/auth-response.dto';
 
+// TODO [Phase 3]: Implement proper refresh token rotation with jti/familyId reuse detection
+
 @Injectable()
 export class RefreshTokenUseCase {
   constructor(
@@ -15,41 +17,31 @@ export class RefreshTokenUseCase {
   ) {}
 
   async execute(refreshToken: string): Promise<RefreshTokenResponseDto> {
-    // Find the hashed token in database
-    const storedToken = await this.refreshTokensRepository.findValidToken(refreshToken);
-
-    if (!storedToken) {
-      throw new UnauthorizedException('Invalid or expired refresh token');
-    }
-
-    // Verify the raw token against the hash
-    const isValid = await this.refreshTokenService.verifyRefreshToken(
-      refreshToken,
-      storedToken.token,
-    );
-
-    if (!isValid) {
-      throw new UnauthorizedException('Invalid refresh token');
-    }
-
-    // Get user
-    const user = await this.prisma.user.findUnique({
-      where: { id: storedToken.userId },
+    // NOTE: In Phase 3, this will use jti for token tracking
+    // For Phase 1B, we do basic token lookup
+    const user = await this.prisma.user.findFirst({
+      where: {
+        refreshTokens: {
+          some: {
+            tokenHash: refreshToken,
+            revokedAt: null,
+            expiresAt: { gt: new Date() },
+          },
+        },
+      },
       include: { role: true },
     });
 
     if (!user || user.status !== 'ACTIVE') {
-      throw new UnauthorizedException('User not found or inactive');
+      throw new UnauthorizedException('Invalid or expired refresh token');
     }
-
-    // Revoke old refresh token
-    await this.refreshTokensRepository.revoke(refreshToken);
 
     // Generate new access token
     const accessToken = await this.tokenService.generateAccessToken({
       sub: user.id,
       email: user.email,
       roleId: user.roleId,
+      tokenVersion: user.tokenVersion,
     });
 
     return {

@@ -8,7 +8,7 @@ export class ListPermissionsQueryDto {
 
   @IsOptional()
   @IsString()
-  groupName?: string;
+  group?: string;
 
   @IsOptional()
   @Type(() => Number)
@@ -28,9 +28,13 @@ export class ListPermissionsQueryDto {
 export class ListPermissionsResponseDto {
   data: Array<{
     id: string;
-    name: string;
+    key: string;
+    resource: string;
+    action: string;
+    label: string;
     description: string | null;
-    groupName: string;
+    group: string;
+    isSystem: boolean;
     createdAt: Date;
   }>;
   total: number;

@@ -4,4 +4,8 @@ export class DuplicateRoleDto {
   @IsString()
   @MaxLength(100)
   name: string;
+
+  @IsString()
+  @MaxLength(100)
+  slug: string;
 }

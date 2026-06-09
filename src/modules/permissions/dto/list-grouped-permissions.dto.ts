@@ -1,9 +1,10 @@
 export class ListGroupedPermissionsResponseDto {
   groups: Array<{
-    groupName: string;
+    group: string;
     permissions: Array<{
       id: string;
-      name: string;
+      key: string;
+      label: string;
       description: string | null;
     }>;
   }>;

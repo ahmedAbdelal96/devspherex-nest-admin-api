@@ -11,9 +11,9 @@ export class ListAuditLogsUseCase {
     const limit = query.limit || 20;
 
     const { data, total } = await this.auditLogsRepository.findAll({
-      userId: query.userId,
+      actorId: query.actorId,
       action: query.action,
-      entityType: query.entityType,
+      entity: query.entity,
       entityId: query.entityId,
       startDate: query.startDate ? new Date(query.startDate) : undefined,
       endDate: query.endDate ? new Date(query.endDate) : undefined,
@@ -24,13 +24,14 @@ export class ListAuditLogsUseCase {
     return {
       data: data.map((log) => ({
         id: log.id,
-        userId: log.userId,
+        actorId: log.actorId,
         action: log.action,
-        entityType: log.entityType,
+        entity: log.entity,
         entityId: log.entityId,
         metadata: log.metadata as Record<string, unknown> | null,
-        ipAddress: log.ipAddress,
+        ip: log.ip,
         userAgent: log.userAgent,
+        requestId: log.requestId,
         createdAt: log.createdAt,
       })),
       total,
