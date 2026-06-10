@@ -288,4 +288,50 @@ npm run quality:check ✅ All gates green
 - Log levels: error, warn, info, debug
 - File/transport-agnostic (structured JSON to stdout)
 
+---
+
+## 15. R1 Repair Note (June 10, 2026)
+
+**Problem:** Commit `64116c4` ("fix(api): harden response contract and validation error wiring") was pushed, but the interceptor spec still contained a `done()`-style test that could hang in CI environments. The test `'does NOT treat domain object with message as envelope — { message, id, body }'` used the callback pattern with `subscribe((result) => { ...; done(); })`. In Jest's parallel test runner this test could time out, causing `FAIL src/common/api-response/api-response.interceptor.spec.ts`.
+
+**Fix:** Converted the failing test from `done()` callback style to `async`/`await` with `toPromise()`:
+
+```typescript
+// Before (fragile in parallel CI runs):
+it('does NOT treat domain object with message as envelope — { message, id, body }', (done) => {
+  interceptor.intercept(ctx, handler).subscribe((result) => {
+    expect(data['id']).toBe('u1');
+    done();
+  });
+});
+
+// After (stable):
+it('does NOT treat domain object with message as envelope — { message, id, body }', async () => {
+  const result = await interceptor.intercept(ctx, handler).toPromise();
+  expect(data['id']).toBe('u1');
+});
+```
+
+**Validation results after fix:**
+
+| Command | Result |
+|---|---|
+| `npx jest --no-coverage` | ✅ 19 suites, 231 tests passed |
+| `npm run test` | ✅ 19 suites, 231 tests passed |
+| `npm run build` | ✅ Success |
+| `npm run lint` | ✅ No errors |
+| `npx prisma validate` | ✅ Valid |
+| `npx prisma generate` | ✅ Generated |
+| `npx ts-node scripts/validate-permissions.ts` | ✅ ALL CHECKS PASSED |
+| `npm run test:smoke` | ✅ Boot detected |
+| `npm run quality:check` | ✅ 19 suites, 231 tests passed |
+
+**Marker leakage confirmation:**
+
+- `JSON.stringify(response)` does not contain `__api_response_wrapped__` ✅
+- `Object.keys(response)` does not contain `__api_response_wrapped__` ✅
+- `isWrapped()` correctly detects already-wrapped responses ✅
+
+**Phase 6-R1 status: CLOSED ✅**
+
 **Phase 6 remains the stable foundation — R1 fixes were surgical and backward-compatible.**

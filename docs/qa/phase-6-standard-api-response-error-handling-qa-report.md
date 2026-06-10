@@ -236,3 +236,17 @@ Coverage baseline changed from 28.8% (Phase 5) to ~29% (Phase 6) — the new fil
 - Integrate with the existing `AuditLogsModule`
 - Add correlation ID to all log entries
 - Add smoke test for audit log creation
+
+---
+
+## R1 Correction Note (June 10, 2026)
+
+Phase 6-R1 ("Response Contract Hardening & Validation Error Wiring") was completed as a sub-phase on top of Phase 6. The R1 repair commit (`64116c4` + subsequent test stabilization) fixed:
+
+- Marker leakage: replaced enumerable `WRAPPED_MARKER` string with non-enumerable `Symbol.for()`
+- ValidationPipe exceptionFactory wiring in `main.ts`
+- Dot-path flattening and sensitive field sanitization in `validation-error.formatter.ts`
+- Message-envelope detection hardening in `ApiResponseInterceptor`
+- HTTP-level integration tests in `validation-error.integration.spec.ts`
+
+Full validation: 19 suites, 231 tests passing. Phase 6 (base) + Phase 6-R1 status: **CLOSED**.
