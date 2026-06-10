@@ -14,6 +14,8 @@ import {
 import { Permissions } from '../../common/rbac';
 import { SYSTEM_PERMISSION_KEYS } from '../../common/rbac';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { AuditLogService } from '../audit-logs/services/audit-log.service';
+import { AUDIT_ACTIONS, AUDIT_RESOURCE_TYPES } from '../audit-logs/constants';
 import {
   CreateUserDto,
   ListUsersQueryDto,
@@ -48,12 +50,25 @@ export class UsersController {
     private readonly updateUserRoleUseCase: UpdateUserRoleUseCase,
     private readonly getUserEffectivePermissionsUseCase: GetUserEffectivePermissionsUseCase,
     private readonly updateUserPermissionOverridesUseCase: UpdateUserPermissionOverridesUseCase,
+    private readonly auditLogService: AuditLogService,
   ) {}
 
   @Post()
   @Permissions(SYSTEM_PERMISSION_KEYS.USERS.CREATE)
-  async create(@Body() dto: CreateUserDto): Promise<CreateUserResponseDto> {
-    return this.createUserUseCase.execute(dto);
+  async create(
+    @Body() dto: CreateUserDto,
+    @CurrentUser() currentUser: { id: string; email?: string },
+  ): Promise<CreateUserResponseDto> {
+    const result = await this.createUserUseCase.execute(dto);
+    await this.auditLogService.log({
+      action: AUDIT_ACTIONS.USERS_CREATE,
+      resourceType: AUDIT_RESOURCE_TYPES.USER,
+      resourceId: result.id,
+      status: 'SUCCESS',
+      actor: { id: currentUser.id, email: currentUser.email },
+      after: { id: result.id, email: result.email, name: result.name },
+    });
+    return result;
   }
 
   @Get()
@@ -94,7 +109,16 @@ export class UsersController {
     @Body() dto: UpdateUserStatusDto,
     @CurrentUser('id') currentUserId: string,
   ) {
-    return this.updateUserStatusUseCase.execute(id, dto, currentUserId);
+    const result = await this.updateUserStatusUseCase.execute(id, dto, currentUserId);
+    await this.auditLogService.log({
+      action: AUDIT_ACTIONS.USERS_UPDATE_STATUS,
+      resourceType: AUDIT_RESOURCE_TYPES.USER,
+      resourceId: id,
+      status: 'SUCCESS',
+      actor: { id: currentUserId },
+      after: { status: dto.status },
+    });
+    return result;
   }
 
   @Put(':id/role')
@@ -104,7 +128,16 @@ export class UsersController {
     @Body() dto: UpdateUserRoleDto,
     @CurrentUser('id') currentUserId: string,
   ) {
-    return this.updateUserRoleUseCase.execute(id, dto, currentUserId);
+    const result = await this.updateUserRoleUseCase.execute(id, dto, currentUserId);
+    await this.auditLogService.log({
+      action: AUDIT_ACTIONS.USERS_UPDATE_ROLE,
+      resourceType: AUDIT_RESOURCE_TYPES.USER,
+      resourceId: id,
+      status: 'SUCCESS',
+      actor: { id: currentUserId },
+      after: { roleId: dto.roleId },
+    });
+    return result;
   }
 
   @Get(':id/effective-permissions')
@@ -118,7 +151,17 @@ export class UsersController {
   async updatePermissionOverrides(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateUserPermissionOverridesDto,
+    @CurrentUser('id') currentUserId: string,
   ): Promise<{ message: string }> {
-    return this.updateUserPermissionOverridesUseCase.execute(id, dto.permissionIds);
+    const result = await this.updateUserPermissionOverridesUseCase.execute(id, dto.permissionIds);
+    await this.auditLogService.log({
+      action: AUDIT_ACTIONS.USERS_PERMISSIONS_OVERRIDE,
+      resourceType: AUDIT_RESOURCE_TYPES.USER,
+      resourceId: id,
+      status: 'SUCCESS',
+      actor: { id: currentUserId },
+      after: { permissionOverrides: dto.permissionIds },
+    });
+    return result;
   }
 }

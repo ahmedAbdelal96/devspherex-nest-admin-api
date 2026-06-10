@@ -1,7 +1,7 @@
 # Testing Strategy
 
 **Date:** 2026-06-10
-**Phase:** 6-R1
+**Phase:** 7-A
 
 ---
 
@@ -51,6 +51,16 @@ src/
       refresh-token.service.spec.ts              ← refresh token logic
     use-cases/
       logout-all.use-case.spec.ts                ← logout-all logic
+  modules/audit-logs/
+    constants/
+      audit-actions.spec.ts                      ← action registry + uniqueness
+    mappers/
+      audit-log-response.mapper.spec.ts          ← DB → client response mapping
+    repositories/
+      audit-logs.repository.spec.ts             ← create, findAll, findById
+    services/
+      audit-log-sanitizer.service.spec.ts        ← recursive sanitization
+      audit-log.service.spec.ts                  ← non-blocking audit logging
   test-utils/
     mocks.ts                                     ← shared mock factories
 ```
@@ -90,6 +100,8 @@ npm run test:smoke
 | `PasswordRecoveryChannelService` | Inline mock `{ sendOtp: jest.fn() }` |
 | `PasswordRecoveryRepository` | Inline mock with jest fns per method |
 | `PasswordService` | Inline mock `{ hashPassword: jest.fn().mockResolvedValue('hash') }` |
+| `AuditLogsRepository` | Inline mock `{ create: jest.fn(), findAll: jest.fn(), findById: jest.fn() }` |
+| `PrismaService` | Inline mock with `jest.fn()` per auditLog method (`create`, `findMany`, `findUnique`, `count`) |
 
 **Key principle:** Unit tests test the **logic** — mocks handle the **infrastructure**. No real database, no real SMTP, no real WhatsApp.
 
@@ -136,6 +148,8 @@ This is the **recommended check before committing**.
 
 - **No EMAIL/WHATSAPP/SMS provider tests** — channels are not implemented
 - **Smoke test** requires port 3105 to be free
+- **No audit log retention/expiry policy** — logs stored indefinitely
+- **No SIEM export** — audit logs not streamed to external systems
 
 ---
 

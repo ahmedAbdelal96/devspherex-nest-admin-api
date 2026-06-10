@@ -1,6 +1,17 @@
 import { Injectable } from '@nestjs/common';
 import { AuditLogsRepository } from '../repositories/audit-logs.repository';
-import { ListAuditLogsQueryDto, ListAuditLogsResponseDto } from '../dto/list-audit-logs.dto';
+import { ListAuditLogsQueryDto } from '../dto/list-audit-logs.dto';
+import { toAuditLogResponse, AuditLogResponse } from '../mappers/audit-log-response.mapper';
+
+export interface ListAuditLogsResponseDto {
+  items: AuditLogResponse[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+}
 
 @Injectable()
 export class ListAuditLogsUseCase {
@@ -8,7 +19,7 @@ export class ListAuditLogsUseCase {
 
   async execute(query: ListAuditLogsQueryDto): Promise<ListAuditLogsResponseDto> {
     const page = query.page || 1;
-    const limit = query.limit || 20;
+    const limit = Math.min(query.limit || 20, 100);
 
     const { data, total } = await this.auditLogsRepository.findAll({
       actorId: query.actorId,
@@ -22,22 +33,13 @@ export class ListAuditLogsUseCase {
     });
 
     return {
-      data: data.map((log) => ({
-        id: log.id,
-        actorId: log.actorId,
-        action: log.action,
-        entity: log.entity,
-        entityId: log.entityId,
-        metadata: log.metadata as Record<string, unknown> | null,
-        ip: log.ip,
-        userAgent: log.userAgent,
-        requestId: log.requestId,
-        createdAt: log.createdAt,
-      })),
-      total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
+      items: data.map(toAuditLogResponse),
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
     };
   }
 }

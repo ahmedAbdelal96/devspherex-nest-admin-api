@@ -3,6 +3,7 @@ import { UsersController } from './users.controller';
 import { UsersRepository } from './repositories/users.repository';
 import { UsersPolicy } from './policies/users.policy';
 import { PasswordService } from '../auth/services/password.service';
+import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import {
   CreateUserUseCase,
   ListUsersUseCase,
@@ -16,6 +17,7 @@ import {
 } from './use-cases';
 
 @Module({
+  imports: [AuditLogsModule],
   controllers: [UsersController],
   providers: [
     // Repository

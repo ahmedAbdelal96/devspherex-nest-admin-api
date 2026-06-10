@@ -22,7 +22,7 @@
  *        error — the challenge was already consumed, revoked, expired, or
  *        is a marker.
  *     2. Update the user passwordHash.
- *     3. If PASSWORD_RECOVERY_REVOKE_SESSIONS_ON_SUCCESS=true:
+ *3. If PASSWORD_RECOVERY_REVOKE_SESSIONS_ON_SUCCESS=true:
  *        a. Revoke all active refresh tokens for the user.
  *        b. Increment user.tokenVersion.
  *     4. Revoke any other active password-recovery challenges for the
@@ -45,6 +45,8 @@ import { PasswordRecoveryHashingService } from '../services/password-recovery-ha
 import { PasswordRecoveryTokenService } from '../services/password-recovery-token.service';
 import { PASSWORD_RECOVERY_PURPOSES } from '../password-recovery.types';
 import { PASSWORD_RECOVERY_RESET_SUCCESS_MESSAGE } from '../password-recovery.constants';
+import { AuditLogService } from '../../../audit-logs/services/audit-log.service';
+import { AUDIT_ACTIONS, AUDIT_RESOURCE_TYPES } from '../../../audit-logs/constants';
 
 const GENERIC_RESET_ERROR = 'Invalid or expired reset token.';
 
@@ -58,6 +60,7 @@ export class ResetPasswordWithTokenUseCase {
     private readonly config: PasswordRecoveryConfig,
     private readonly hashing: PasswordRecoveryHashingService,
     private readonly tokens: PasswordRecoveryTokenService,
+    private readonly auditLogService: AuditLogService,
   ) {}
 
   async execute(
@@ -192,6 +195,15 @@ export class ResetPasswordWithTokenUseCase {
     });
 
     this.logger.log(`Password reset completed for user ${user.id}`);
+
+    // Audit log — non-blocking, safe to fail silently
+    await this.auditLogService.log({
+      action: AUDIT_ACTIONS.AUTH_PASSWORD_RESET_SUCCESS,
+      resourceType: AUDIT_RESOURCE_TYPES.USER,
+      resourceId: user.id,
+      status: 'SUCCESS',
+      actor: { id: user.id, email: user.email },
+    });
 
     return { message: PASSWORD_RECOVERY_RESET_SUCCESS_MESSAGE };
   }

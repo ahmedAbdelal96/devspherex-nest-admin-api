@@ -44,8 +44,9 @@ function buildUseCase(
   const passwordService = { hashPassword: jest.fn().mockResolvedValue('newhash') } as unknown as PasswordService;
   const prisma = createMockPrismaService();
   Object.assign(prisma, prismaOverrides);
+  const auditLogService = { log: jest.fn().mockResolvedValue(undefined) } as never;
 
-  return new ResetPasswordWithTokenUseCase(prisma as never, passwordService, config, hashing, tokens);
+  return new ResetPasswordWithTokenUseCase(prisma as never, passwordService, config, hashing, tokens, auditLogService);
 }
 
 describe('ResetPasswordWithTokenUseCase', () => {
@@ -186,6 +187,7 @@ describe('ResetPasswordWithTokenUseCase', () => {
       prisma.$transaction = $transaction;
 
       const passwordService = { hashPassword: jest.fn().mockResolvedValue('newhash') };
+      const auditLogService = { log: jest.fn().mockResolvedValue(undefined) };
 
       const uc = new ResetPasswordWithTokenUseCase(
         prisma as never,
@@ -193,6 +195,7 @@ describe('ResetPasswordWithTokenUseCase', () => {
         config,
         hashing,
         tokens,
+        auditLogService as never,
       );
 
       const result = await uc.execute('challenge-1.secret', 'NewPass123!');

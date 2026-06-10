@@ -11,6 +11,7 @@ import { RequestPasswordRecoveryUseCase } from './use-cases/request-password-rec
 import { VerifyPasswordRecoveryOtpUseCase } from './use-cases/verify-password-recovery-otp.use-case';
 import { ResetPasswordWithTokenUseCase } from './use-cases/reset-password-with-token.use-case';
 import { PasswordService } from '../services/password.service';
+import { AuditLogsModule } from '../../audit-logs/audit-logs.module';
 
 /**
  * Password Recovery Module
@@ -32,6 +33,7 @@ import { PasswordService } from '../services/password.service';
  */
 @Global()
 @Module({
+  imports: [AuditLogsModule],
   providers: [
     // Config
     PasswordRecoveryConfig,

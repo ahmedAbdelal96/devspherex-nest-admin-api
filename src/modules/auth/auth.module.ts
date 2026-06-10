@@ -9,6 +9,7 @@ import { PasswordService } from './services/password.service';
 import { TokenService } from './services/token.service';
 import { RefreshTokenService } from './services/refresh-token.service';
 import { RefreshTokensRepository } from './repositories/refresh-tokens.repository';
+import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import {
   RegisterUseCase,
   LoginUseCase,
@@ -35,6 +36,8 @@ import { PasswordRecoveryModule } from './password-recovery/password-recovery.mo
     }),
     // Password recovery subsystem
     PasswordRecoveryModule,
+    // Audit logging
+    AuditLogsModule,
   ],
   controllers: [AuthController],
   providers: [

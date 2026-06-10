@@ -3,19 +3,27 @@ import {
   Get,
   Post,
   Body,
+  Param,
   Query,
   HttpCode,
   HttpStatus,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import { Permissions } from '../../common/rbac';
 import { SYSTEM_PERMISSION_KEYS } from '../../common/rbac';
-import { ListAuditLogsQueryDto, ListAuditLogsResponseDto, CreateAuditLogDto } from './dto';
-import { ListAuditLogsUseCase, CreateAuditLogUseCase } from './use-cases';
+import { ListAuditLogsQueryDto } from './dto';
+import {
+  ListAuditLogsUseCase,
+  GetAuditLogUseCase,
+  CreateAuditLogUseCase,
+} from './use-cases';
+import type { ListAuditLogsResponseDto } from './use-cases/list-audit-logs.use-case';
 
 @Controller('audit-logs')
 export class AuditLogsController {
   constructor(
     private readonly listAuditLogsUseCase: ListAuditLogsUseCase,
+    private readonly getAuditLogUseCase: GetAuditLogUseCase,
     private readonly createAuditLogUseCase: CreateAuditLogUseCase,
   ) {}
 
@@ -25,10 +33,16 @@ export class AuditLogsController {
     return this.listAuditLogsUseCase.execute(query);
   }
 
+  @Get(':id')
+  @Permissions(SYSTEM_PERMISSION_KEYS.AUDIT_LOGS.READ)
+  async getOne(@Param('id', ParseUUIDPipe) id: string) {
+    return this.getAuditLogUseCase.execute(id);
+  }
+
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @Permissions(SYSTEM_PERMISSION_KEYS.AUDIT_LOGS.CREATE)
-  async create(@Body() dto: CreateAuditLogDto) {
-    return this.createAuditLogUseCase.execute(dto);
+  async create(@Body() dto: unknown) {
+    return this.createAuditLogUseCase.execute(dto as never);
   }
 }

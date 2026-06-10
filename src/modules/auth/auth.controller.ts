@@ -10,6 +10,8 @@ import {
 import type { Request } from 'express';
 import { Public, Authenticated } from '../../common/rbac';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { AuditLogService } from '../audit-logs/services/audit-log.service';
+import { AUDIT_ACTIONS, AUDIT_RESOURCE_TYPES } from '../audit-logs/constants';
 import {
   RegisterDto,
   LoginDto,
@@ -50,6 +52,7 @@ export class AuthController {
     private readonly requestPasswordRecoveryUseCase: RequestPasswordRecoveryUseCase,
     private readonly verifyPasswordRecoveryOtpUseCase: VerifyPasswordRecoveryOtpUseCase,
     private readonly resetPasswordWithTokenUseCase: ResetPasswordWithTokenUseCase,
+    private readonly auditLogService: AuditLogService,
   ) {}
 
   @Public()
@@ -79,8 +82,16 @@ export class AuthController {
   @Authenticated()
   @Post('logout-all')
   @HttpCode(HttpStatus.OK)
-  async logoutAll(@CurrentUser('id') userId: string): Promise<{ message: string }> {
-    await this.logoutAllUseCase.execute(userId);
+  async logoutAll(
+    @CurrentUser() currentUser: { id: string; email?: string },
+  ): Promise<{ message: string }> {
+    await this.logoutAllUseCase.execute(currentUser.id);
+    await this.auditLogService.log({
+      action: AUDIT_ACTIONS.AUTH_LOGOUT_ALL,
+      resourceType: AUDIT_RESOURCE_TYPES.AUTH_SESSION,
+      status: 'SUCCESS',
+      actor: { id: currentUser.id, email: currentUser.email },
+    });
     return { message: 'Logged out from all devices successfully' };
   }
 
@@ -101,10 +112,17 @@ export class AuthController {
   @Post('change-password')
   @HttpCode(HttpStatus.OK)
   async changePassword(
-    @CurrentUser('id') userId: string,
+    @CurrentUser() currentUser: { id: string; email?: string },
     @Body() dto: ChangePasswordDto,
   ): Promise<{ message: string }> {
-    await this.changePasswordUseCase.execute(userId, dto);
+    await this.changePasswordUseCase.execute(currentUser.id, dto);
+    await this.auditLogService.log({
+      action: AUDIT_ACTIONS.AUTH_PASSWORD_CHANGE,
+      resourceType: AUDIT_RESOURCE_TYPES.USER,
+      resourceId: currentUser.id,
+      status: 'SUCCESS',
+      actor: { id: currentUser.id, email: currentUser.email },
+    });
     return { message: 'Password changed successfully' };
   }
 
