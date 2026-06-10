@@ -35,31 +35,30 @@ export interface AuditLogResponse {
 
 /**
  * Map a raw AuditLog DB record to a safe client response.
- * The actor info is minimal — only id is stored in DB (email/roleId would
- * require a join). For now, actor.email and actor.roleId are null.
- * The metadata field holds the sanitized before/after snapshot.
+ *
+ * Stores: actorId/actorEmail/actorRoleId, requestId/ipAddress/userAgent,
+ * resourceType/resourceId, status, before/after/metadata.
  */
 export function toAuditLogResponse(log: AuditLog): AuditLogResponse {
   return {
     id: log.id,
     action: log.action,
-    resourceType: log.entity,
-    resourceId: log.entityId,
-    status: 'SUCCESS', // existing model doesn't store status; default to SUCCESS
+    resourceType: log.resourceType,
+    resourceId: log.resourceId,
+    status: log.status ?? 'SUCCESS',
     actor: {
       id: log.actorId,
-      email: null,
-      roleId: null,
+      email: log.actorEmail,
+      roleId: log.actorRoleId,
     },
     request: {
       requestId: log.requestId,
-      ipAddress: log.ip,
+      ipAddress: log.ipAddress,
       userAgent: log.userAgent,
     },
-    // Metadata field contains the sanitized before/after snapshot
-    before: null,
-    after: (log.metadata as Record<string, unknown>) ?? null,
-    metadata: null,
+    before: (log.before as Record<string, unknown>) ?? null,
+    after: (log.after as Record<string, unknown>) ?? null,
+    metadata: (log.metadata as Record<string, unknown>) ?? null,
     createdAt: log.createdAt.toISOString(),
   };
 }

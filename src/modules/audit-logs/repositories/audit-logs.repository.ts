@@ -2,54 +2,69 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../common/database/prisma.service';
 import { AuditLog, Prisma } from '@prisma/client';
 
+export interface CreateAuditLogData {
+  actorId?: string | null;
+  actorEmail?: string | null;
+  actorRoleId?: string | null;
+  action: string;
+  resourceType?: string | null;
+  resourceId?: string | null;
+  status?: string;
+  requestId?: string | null;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+  before?: unknown;
+  after?: unknown;
+  metadata?: unknown;
+}
+
+export interface FindAllAuditLogsParams {
+  actorId?: string;
+  action?: string;
+  resourceType?: string;
+  resourceId?: string;
+  status?: string;
+  requestId?: string;
+  from?: Date;
+  to?: Date;
+  page: number;
+  limit: number;
+}
+
 @Injectable()
 export class AuditLogsRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(data: {
-    actorId?: string;
-    action: string;
-    entity?: string;
-    entityId?: string;
-    metadata?: Record<string, unknown>;
-    ip?: string;
-    userAgent?: string;
-    requestId?: string;
-  }): Promise<AuditLog> {
+  async create(data: CreateAuditLogData): Promise<AuditLog> {
     return this.prisma.auditLog.create({
       data: {
         actorId: data.actorId ?? null,
+        actorEmail: data.actorEmail ?? null,
+        actorRoleId: data.actorRoleId ?? null,
         action: data.action,
-        entity: data.entity ?? null,
-        entityId: data.entityId ?? null,
-        metadata:
-          data.metadata !== undefined
-            ? (data.metadata as Prisma.InputJsonValue)
-            : undefined,
-        ip: data.ip ?? null,
-        userAgent: data.userAgent ?? null,
+        resourceType: data.resourceType ?? null,
+        resourceId: data.resourceId ?? null,
+        status: data.status ?? 'SUCCESS',
         requestId: data.requestId ?? null,
+        ipAddress: data.ipAddress ?? null,
+        userAgent: data.userAgent ?? null,
+        before: data.before !== undefined ? (data.before as Prisma.InputJsonValue) : undefined,
+        after: data.after !== undefined ? (data.after as Prisma.InputJsonValue) : undefined,
+        metadata: data.metadata !== undefined ? (data.metadata as Prisma.InputJsonValue) : undefined,
       },
     });
   }
 
-  async findAll(params: {
-    actorId?: string;
-    action?: string;
-    entity?: string;
-    entityId?: string;
-    startDate?: Date;
-    endDate?: Date;
-    page: number;
-    limit: number;
-  }): Promise<{ data: AuditLog[]; total: number }> {
+  async findAll(params: FindAllAuditLogsParams): Promise<{ data: AuditLog[]; total: number }> {
     const {
       actorId,
       action,
-      entity,
-      entityId,
-      startDate,
-      endDate,
+      resourceType,
+      resourceId,
+      status,
+      requestId,
+      from,
+      to,
       page,
       limit,
     } = params;
@@ -65,21 +80,29 @@ export class AuditLogsRepository {
       where.action = action;
     }
 
-    if (entity) {
-      where.entity = entity;
+    if (resourceType) {
+      where.resourceType = resourceType;
     }
 
-    if (entityId) {
-      where.entityId = entityId;
+    if (resourceId) {
+      where.resourceId = resourceId;
     }
 
-    if (startDate || endDate) {
+    if (status) {
+      where.status = status;
+    }
+
+    if (requestId) {
+      where.requestId = requestId;
+    }
+
+    if (from || to) {
       where.createdAt = {};
-      if (startDate) {
-        where.createdAt.gte = startDate;
+      if (from) {
+        where.createdAt.gte = from;
       }
-      if (endDate) {
-        where.createdAt.lte = endDate;
+      if (to) {
+        where.createdAt.lte = to;
       }
     }
 

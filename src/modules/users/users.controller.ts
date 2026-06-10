@@ -10,12 +10,15 @@ import {
   HttpCode,
   HttpStatus,
   ParseUUIDPipe,
+  Req,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import { Permissions } from '../../common/rbac';
 import { SYSTEM_PERMISSION_KEYS } from '../../common/rbac';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AuditLogService } from '../audit-logs/services/audit-log.service';
 import { AUDIT_ACTIONS, AUDIT_RESOURCE_TYPES } from '../audit-logs/constants';
+import { getAuditRequestContext, getAuditActorFromUser } from '../audit-logs/utils';
 import {
   CreateUserDto,
   ListUsersQueryDto,
@@ -57,7 +60,8 @@ export class UsersController {
   @Permissions(SYSTEM_PERMISSION_KEYS.USERS.CREATE)
   async create(
     @Body() dto: CreateUserDto,
-    @CurrentUser() currentUser: { id: string; email?: string },
+    @CurrentUser() currentUser: { id: string; email?: string; roleId?: string },
+    @Req() req: Request,
   ): Promise<CreateUserResponseDto> {
     const result = await this.createUserUseCase.execute(dto);
     await this.auditLogService.log({
@@ -65,7 +69,8 @@ export class UsersController {
       resourceType: AUDIT_RESOURCE_TYPES.USER,
       resourceId: result.id,
       status: 'SUCCESS',
-      actor: { id: currentUser.id, email: currentUser.email },
+      actor: getAuditActorFromUser(currentUser),
+      request: getAuditRequestContext(req),
       after: { id: result.id, email: result.email, name: result.name },
     });
     return result;
@@ -108,6 +113,7 @@ export class UsersController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateUserStatusDto,
     @CurrentUser('id') currentUserId: string,
+    @Req() req: Request,
   ) {
     const result = await this.updateUserStatusUseCase.execute(id, dto, currentUserId);
     await this.auditLogService.log({
@@ -116,6 +122,7 @@ export class UsersController {
       resourceId: id,
       status: 'SUCCESS',
       actor: { id: currentUserId },
+      request: getAuditRequestContext(req),
       after: { status: dto.status },
     });
     return result;
@@ -127,6 +134,7 @@ export class UsersController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateUserRoleDto,
     @CurrentUser('id') currentUserId: string,
+    @Req() req: Request,
   ) {
     const result = await this.updateUserRoleUseCase.execute(id, dto, currentUserId);
     await this.auditLogService.log({
@@ -135,6 +143,7 @@ export class UsersController {
       resourceId: id,
       status: 'SUCCESS',
       actor: { id: currentUserId },
+      request: getAuditRequestContext(req),
       after: { roleId: dto.roleId },
     });
     return result;
@@ -152,6 +161,7 @@ export class UsersController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateUserPermissionOverridesDto,
     @CurrentUser('id') currentUserId: string,
+    @Req() req: Request,
   ): Promise<{ message: string }> {
     const result = await this.updateUserPermissionOverridesUseCase.execute(id, dto.permissionIds);
     await this.auditLogService.log({
@@ -160,6 +170,7 @@ export class UsersController {
       resourceId: id,
       status: 'SUCCESS',
       actor: { id: currentUserId },
+      request: getAuditRequestContext(req),
       after: { permissionOverrides: dto.permissionIds },
     });
     return result;

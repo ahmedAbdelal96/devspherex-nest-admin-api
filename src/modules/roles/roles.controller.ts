@@ -10,12 +10,15 @@ import {
   HttpCode,
   HttpStatus,
   ParseUUIDPipe,
+  Req,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import { Permissions } from '../../common/rbac';
 import { SYSTEM_PERMISSION_KEYS } from '../../common/rbac';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AuditLogService } from '../audit-logs/services/audit-log.service';
 import { AUDIT_ACTIONS, AUDIT_RESOURCE_TYPES } from '../audit-logs/constants';
+import { getAuditRequestContext, getAuditActorFromUser } from '../audit-logs/utils';
 import {
   CreateRoleDto,
   ListRolesQueryDto,
@@ -52,7 +55,8 @@ export class RolesController {
   @Permissions(SYSTEM_PERMISSION_KEYS.ROLES.CREATE)
   async create(
     @Body() dto: CreateRoleDto,
-    @CurrentUser() currentUser: { id: string; email?: string },
+    @CurrentUser() currentUser: { id: string; email?: string; roleId?: string },
+    @Req() req: Request,
   ): Promise<CreateRoleResponseDto> {
     const result = await this.createRoleUseCase.execute(dto);
     await this.auditLogService.log({
@@ -60,7 +64,8 @@ export class RolesController {
       resourceType: AUDIT_RESOURCE_TYPES.ROLE,
       resourceId: result.id,
       status: 'SUCCESS',
-      actor: { id: currentUser.id, email: currentUser.email },
+      actor: getAuditActorFromUser(currentUser),
+      request: getAuditRequestContext(req),
       after: { id: result.id, name: result.name, slug: result.slug },
     });
     return result;
@@ -84,6 +89,7 @@ export class RolesController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateRoleDto,
     @CurrentUser('id') currentUserId: string,
+    @Req() req: Request,
   ) {
     const result = await this.updateRoleUseCase.execute(id, dto);
     await this.auditLogService.log({
@@ -92,6 +98,7 @@ export class RolesController {
       resourceId: id,
       status: 'SUCCESS',
       actor: { id: currentUserId },
+      request: getAuditRequestContext(req),
       after: dto,
     });
     return result;
@@ -103,6 +110,7 @@ export class RolesController {
   async delete(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser('id') currentUserId: string,
+    @Req() req: Request,
   ): Promise<void> {
     await this.deleteRoleUseCase.execute(id);
     await this.auditLogService.log({
@@ -111,6 +119,7 @@ export class RolesController {
       resourceId: id,
       status: 'SUCCESS',
       actor: { id: currentUserId },
+      request: getAuditRequestContext(req),
     });
   }
 
@@ -120,6 +129,7 @@ export class RolesController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateRolePermissionsDto,
     @CurrentUser('id') currentUserId: string,
+    @Req() req: Request,
   ) {
     const result = await this.updateRolePermissionsUseCase.execute(id, dto);
     await this.auditLogService.log({
@@ -128,6 +138,7 @@ export class RolesController {
       resourceId: id,
       status: 'SUCCESS',
       actor: { id: currentUserId },
+      request: getAuditRequestContext(req),
       after: { permissionIds: dto.permissionIds },
     });
     return result;
@@ -138,7 +149,8 @@ export class RolesController {
   async duplicate(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: DuplicateRoleDto,
-    @CurrentUser() currentUser: { id: string; email?: string },
+    @CurrentUser() currentUser: { id: string; email?: string; roleId?: string },
+    @Req() req: Request,
   ): Promise<CreateRoleResponseDto> {
     const result = await this.duplicateRoleUseCase.execute(id, dto);
     await this.auditLogService.log({
@@ -146,7 +158,8 @@ export class RolesController {
       resourceType: AUDIT_RESOURCE_TYPES.ROLE,
       resourceId: result.id,
       status: 'SUCCESS',
-      actor: { id: currentUser.id, email: currentUser.email },
+      actor: getAuditActorFromUser(currentUser),
+      request: getAuditRequestContext(req),
       after: { id: result.id, name: result.name, slug: result.slug },
     });
     return result;

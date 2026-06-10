@@ -1,7 +1,7 @@
 # Testing Strategy
 
 **Date:** 2026-06-10
-**Phase:** 7-A
+**Phase:** 7-A-R1
 
 ---
 
@@ -60,7 +60,9 @@ src/
       audit-logs.repository.spec.ts             ← create, findAll, findById
     services/
       audit-log-sanitizer.service.spec.ts        ← recursive sanitization
-      audit-log.service.spec.ts                  ← non-blocking audit logging
+      audit-log.service.spec.ts                  ← non-blocking audit logging (before/after/metadata separate)
+    utils/
+      audit-context.util.spec.ts                 ← request context + actor extraction
   test-utils/
     mocks.ts                                     ← shared mock factories
 ```

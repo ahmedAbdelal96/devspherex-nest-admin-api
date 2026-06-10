@@ -45,7 +45,7 @@ import { PasswordRecoveryHashingService } from '../services/password-recovery-ha
 import { PasswordRecoveryTokenService } from '../services/password-recovery-token.service';
 import { PASSWORD_RECOVERY_PURPOSES } from '../password-recovery.types';
 import { PASSWORD_RECOVERY_RESET_SUCCESS_MESSAGE } from '../password-recovery.constants';
-import { AuditLogService } from '../../../audit-logs/services/audit-log.service';
+import { AuditLogService, AuditRequestContext } from '../../../audit-logs/services/audit-log.service';
 import { AUDIT_ACTIONS, AUDIT_RESOURCE_TYPES } from '../../../audit-logs/constants';
 
 const GENERIC_RESET_ERROR = 'Invalid or expired reset token.';
@@ -66,6 +66,7 @@ export class ResetPasswordWithTokenUseCase {
   async execute(
     resetSessionToken: string,
     newPassword: string,
+    auditContext?: { request?: AuditRequestContext },
   ): Promise<{ message: string }> {
     if (!this.config.enabled) {
       throw new BadRequestException('Password recovery is not available');
@@ -203,6 +204,11 @@ export class ResetPasswordWithTokenUseCase {
       resourceId: user.id,
       status: 'SUCCESS',
       actor: { id: user.id, email: user.email },
+      request: auditContext?.request,
+      after: {
+        passwordReset: true,
+        sessionsRevoked: this.config.revokeSessionsOnSuccess,
+      },
     });
 
     return { message: PASSWORD_RECOVERY_RESET_SUCCESS_MESSAGE };

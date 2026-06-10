@@ -1,34 +1,54 @@
-import { IsOptional, IsString, IsObject, IsUUID } from 'class-validator';
+import { IsOptional, IsString, IsObject, IsUUID, IsIn } from 'class-validator';
 
 export class CreateAuditLogDto {
   @IsOptional()
   @IsUUID()
   actorId?: string;
 
+  @IsOptional()
+  @IsString()
+  actorEmail?: string;
+
+  @IsOptional()
+  @IsString()
+  actorRoleId?: string;
+
   @IsString()
   action: string;
 
   @IsOptional()
   @IsString()
-  entity?: string;
+  resourceType?: string;
 
   @IsOptional()
   @IsString()
-  entityId?: string;
+  resourceId?: string;
 
   @IsOptional()
-  @IsObject()
-  metadata?: Record<string, unknown>;
+  @IsIn(['SUCCESS', 'FAILURE'])
+  status?: string;
 
   @IsOptional()
   @IsString()
-  ip?: string;
+  requestId?: string;
+
+  @IsOptional()
+  @IsString()
+  ipAddress?: string;
 
   @IsOptional()
   @IsString()
   userAgent?: string;
 
   @IsOptional()
-  @IsString()
-  requestId?: string;
+  @IsObject()
+  before?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsObject()
+  after?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsObject()
+  metadata?: Record<string, unknown>;
 }

@@ -12,6 +12,7 @@ import { Public, Authenticated } from '../../common/rbac';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AuditLogService } from '../audit-logs/services/audit-log.service';
 import { AUDIT_ACTIONS, AUDIT_RESOURCE_TYPES } from '../audit-logs/constants';
+import { getAuditRequestContext, getAuditActorFromUser } from '../audit-logs/utils';
 import {
   RegisterDto,
   LoginDto,
@@ -83,14 +84,17 @@ export class AuthController {
   @Post('logout-all')
   @HttpCode(HttpStatus.OK)
   async logoutAll(
-    @CurrentUser() currentUser: { id: string; email?: string },
+    @CurrentUser() currentUser: { id: string; email?: string; roleId?: string },
+    @Req() req: Request,
   ): Promise<{ message: string }> {
     await this.logoutAllUseCase.execute(currentUser.id);
     await this.auditLogService.log({
       action: AUDIT_ACTIONS.AUTH_LOGOUT_ALL,
       resourceType: AUDIT_RESOURCE_TYPES.AUTH_SESSION,
       status: 'SUCCESS',
-      actor: { id: currentUser.id, email: currentUser.email },
+      actor: getAuditActorFromUser(currentUser),
+      request: getAuditRequestContext(req),
+      after: { sessionsRevoked: true },
     });
     return { message: 'Logged out from all devices successfully' };
   }
@@ -112,8 +116,9 @@ export class AuthController {
   @Post('change-password')
   @HttpCode(HttpStatus.OK)
   async changePassword(
-    @CurrentUser() currentUser: { id: string; email?: string },
+    @CurrentUser() currentUser: { id: string; email?: string; roleId?: string },
     @Body() dto: ChangePasswordDto,
+    @Req() req: Request,
   ): Promise<{ message: string }> {
     await this.changePasswordUseCase.execute(currentUser.id, dto);
     await this.auditLogService.log({
@@ -121,7 +126,9 @@ export class AuthController {
       resourceType: AUDIT_RESOURCE_TYPES.USER,
       resourceId: currentUser.id,
       status: 'SUCCESS',
-      actor: { id: currentUser.id, email: currentUser.email },
+      actor: getAuditActorFromUser(currentUser),
+      request: getAuditRequestContext(req),
+      after: { passwordChanged: true },
     });
     return { message: 'Password changed successfully' };
   }
@@ -171,10 +178,14 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async resetPassword(
     @Body() dto: ResetPasswordWithTokenDto,
+    @Req() req: Request,
   ): Promise<{ message: string }> {
     return this.resetPasswordWithTokenUseCase.execute(
       dto.resetSessionToken,
       dto.newPassword,
+      {
+        request: getAuditRequestContext(req),
+      },
     );
   }
 }

@@ -21,13 +21,26 @@ export class ListAuditLogsUseCase {
     const page = query.page || 1;
     const limit = Math.min(query.limit || 20, 100);
 
+    // Support both new names (resourceType/resourceId) and
+    // backward-compatible aliases (entity/entityId, from/to, startDate/endDate)
+    const resourceType = query.resourceType ?? query.entity;
+    const resourceId = query.resourceId ?? query.entityId;
+    const from = query.from
+      ? new Date(query.from)
+      : (query.startDate ? new Date(query.startDate) : undefined);
+    const to = query.to
+      ? new Date(query.to)
+      : (query.endDate ? new Date(query.endDate) : undefined);
+
     const { data, total } = await this.auditLogsRepository.findAll({
       actorId: query.actorId,
       action: query.action,
-      entity: query.entity,
-      entityId: query.entityId,
-      startDate: query.startDate ? new Date(query.startDate) : undefined,
-      endDate: query.endDate ? new Date(query.endDate) : undefined,
+      resourceType,
+      resourceId,
+      status: query.status,
+      requestId: query.requestId,
+      from,
+      to,
       page,
       limit,
     });

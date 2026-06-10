@@ -6,7 +6,7 @@
  * to the repository.
  *
  * Behavior:
- * - Sanitizes before/after/metadata before passing to repository
+ * - Sanitizes before/after/metadata separately before passing to repository
  * - Does NOT throw if audit log DB insert fails — logs a warning instead
  * - Audit logging failure does NOT break the originating business operation
  * - Captures actor, request context, and resource information
@@ -18,8 +18,9 @@
  *     resourceType: AUDIT_RESOURCE_TYPES.USER,
  *     resourceId: user.id,
  *     status: 'SUCCESS',
- *     actor: { id: currentUser.id, email: currentUser.email },
+ *     actor: { id: currentUser.id, email: currentUser.email, roleId: currentUser.roleId },
  *     request: { requestId, ipAddress, userAgent },
+ *     before: beforeSnapshot,
  *     after: sanitizeAuditData(createdUser),
  *   });
  */
@@ -65,6 +66,9 @@ export class AuditLogService {
    *
    * If the DB insert fails, a warning is logged but the error is NOT re-thrown.
    * This ensures audit logging never breaks a critical business operation.
+   *
+   * before, after, and metadata are sanitized separately and stored in their
+   * own DB fields.
    */
   async log(input: CreateAuditLogInput): Promise<void> {
     try {
@@ -80,13 +84,18 @@ export class AuditLogService {
 
       await this.auditLogsRepository.create({
         actorId: input.actor?.id,
+        actorEmail: input.actor?.email,
+        actorRoleId: input.actor?.roleId,
         action: input.action,
-        entity: input.resourceType,
-        entityId: input.resourceId,
-        metadata: (sanitizedMetadata ?? sanitizedAfter ?? sanitizedBefore) as Record<string, unknown>,
-        ip: input.request?.ipAddress,
-        userAgent: input.request?.userAgent,
+        resourceType: input.resourceType,
+        resourceId: input.resourceId,
+        status: input.status ?? 'SUCCESS',
         requestId: input.request?.requestId,
+        ipAddress: input.request?.ipAddress,
+        userAgent: input.request?.userAgent,
+        before: sanitizedBefore as Record<string, unknown>,
+        after: sanitizedAfter as Record<string, unknown>,
+        metadata: sanitizedMetadata as Record<string, unknown>,
       });
     } catch (err) {
       // Never let audit logging failure break the business operation

@@ -1,7 +1,7 @@
 # Audit Logging Contract
 
 **Date:** 2026-06-10
-**Phase:** 7-A
+**Phase:** 7-A (updated R1)
 
 ---
 
@@ -17,30 +17,51 @@ The `AuditLog` Prisma model stores all audit records:
 
 ```prisma
 model AuditLog {
-  id        String   @id @default(uuid())
-  actorId   String?
-  action    String
-  entity    String?
-  entityId  String?
-  metadata  Json?
-  ip        String?
-  userAgent String?
-  requestId String?
-  createdAt DateTime @default(now()) @map("created_at")
+  id           String   @id @default(uuid())
+  actorId      String?  @map("actor_id")
+  actorEmail   String?  @map("actor_email")
+  actorRoleId  String?  @map("actor_role_id")
+  action       String   @map("action")
+  resourceType String?  @map("resource_type")
+  resourceId   String?  @map("resource_id")
+  status       String   @default("SUCCESS") @map("status")
+  requestId    String?  @map("request_id")
+  ipAddress    String?  @map("ip_address")
+  userAgent    String?  @map("user_agent")
+  before       Json?    @map("before")
+  after        Json?    @map("after")
+  metadata     Json?    @map("metadata")
+  createdAt    DateTime @default(now()) @map("created_at")
 }
 ```
 
 | Field | Description |
 |---|---|
 | `actorId` | ID of the user who triggered the action (null for system actions) |
+| `actorEmail` | Email of the actor when available |
+| `actorRoleId` | Role ID of the actor when available |
 | `action` | Dot/kebab string from `AUDIT_ACTIONS` registry (e.g. `users.create`) |
-| `entity` | PascalCase resource type (e.g. `User`, `Role`) |
-| `entityId` | UUID of the affected resource |
-| `metadata` | JSON snapshot — sanitized before storage |
-| `ip` | IP address of the request |
+| `resourceType` | PascalCase resource type (e.g. `User`, `Role`) |
+| `resourceId` | UUID of the affected resource |
+| `status` | `SUCCESS` or `FAILURE` |
+| `requestId` | Phase 6 request tracking ID (correlation) |
+| `ipAddress` | IP address of the request (supports x-forwarded-for) |
 | `userAgent` | User-Agent header |
-| `requestId` | Internal request tracking ID |
+| `before` | JSON snapshot before the change (sanitized) |
+| `after` | JSON snapshot after the change (sanitized) |
+| `metadata` | Additional structured metadata (sanitized) |
 | `createdAt` | Timestamp of the event |
+
+### Indexes
+
+```
+@@index([action])
+@@index([resourceType, resourceId])
+@@index([actorId])
+@@index([requestId])
+@@index([status])
+@@index([createdAt])
+```
 
 ---
 
@@ -133,7 +154,21 @@ async log(input: CreateAuditLogInput): Promise<void> {
     const sanitizedBefore = input.before !== undefined ? sanitizeAuditData(input.before) : undefined;
     const sanitizedAfter = input.after !== undefined ? sanitizeAuditData(input.after) : undefined;
     const sanitizedMetadata = input.metadata !== undefined ? sanitizeAuditData(input.metadata) : undefined;
-    await this.auditLogsRepository.create({ ... });
+    await this.auditLogsRepository.create({
+      actorId: input.actor?.id,
+      actorEmail: input.actor?.email,
+      actorRoleId: input.actor?.roleId,
+      action: input.action,
+      resourceType: input.resourceType,
+      resourceId: input.resourceId,
+      status: input.status ?? 'SUCCESS',
+      requestId: input.request?.requestId,
+      ipAddress: input.request?.ipAddress,
+      userAgent: input.request?.userAgent,
+      before: sanitizedBefore,
+      after: sanitizedAfter,
+      metadata: sanitizedMetadata,
+    });
   } catch (err) {
     this.logger.warn(`Failed to write audit log [${input.action}]: ...`);
   }
@@ -142,42 +177,49 @@ async log(input: CreateAuditLogInput): Promise<void> {
 
 ---
 
+## Audit Context Extraction
+
+`getAuditRequestContext(req)` and `getAuditActorFromUser(user)` in `src/modules/audit-logs/utils/audit-context.util.ts` safely extract audit context from Express Request and current user objects.
+
+- `requestId` — from `req.requestId` (set by requestIdMiddleware)
+- `ipAddress` — from `req.ip` or `x-forwarded-for` first value
+- `userAgent` — from `req.headers['user-agent']`
+- `actor.id/email/roleId` — from current user object
+
+**Never stored:** authorization header, cookies, request body, query parameters.
+
+---
+
 ## Audit Injection Points
 
-Audit logging is added at the **controller level** — after successful business operations. This avoids invasive changes to use-case method signatures.
+Audit logging is added at the **controller level** — after successful business operations. Every audit call includes request context (requestId, ipAddress, userAgent) and actor info (id, email, roleId when available).
 
 ### UsersController
 
-| Method | Action | Trigger |
+| Method | Action | Notes |
 |---|---|---|
-| `POST /users` | `users.create` | User created |
-| `PATCH /users/:id/status` | `users.update-status` | Status changed |
-| `PATCH /users/:id/role` | `users.update-role` | Role changed |
-| `POST /users/:id/permissions-override` | `users.permissions-override` | Override applied |
+| `POST /users` | `users.create` | after: safe user summary |
+| `PUT /users/:id/status` | `users.update-status` | after: { status } |
+| `PUT /users/:id/role` | `users.update-role` | after: { roleId } |
+| `PUT /users/:id/permission-overrides` | `users.permissions-override` | after: { permissionOverrides } |
 
 ### RolesController
 
-| Method | Action | Trigger |
+| Method | Action | Notes |
 |---|---|---|
-| `POST /roles` | `roles.create` | Role created |
-| `PATCH /roles/:id` | `roles.update` | Role updated |
-| `DELETE /roles/:id` | `roles.delete` | Role deleted |
-| `PATCH /roles/:id/disable` | `roles.disable` | Role disabled |
-| `POST /roles/:id/permissions` | `roles.update-permissions` | Permissions updated |
-| `POST /roles/:id/duplicate` | `roles.duplicate` | Role duplicated |
+| `POST /roles` | `roles.create` | after: safe role summary |
+| `PUT /roles/:id` | `roles.update` | after: changed fields |
+| `DELETE /roles/:id` | `roles.delete` | no before/after |
+| `PUT /roles/:id/permissions` | `roles.update-permissions` | after: { permissionIds } |
+| `POST /roles/:id/duplicate` | `roles.duplicate` | after: new role summary |
 
 ### AuthController
 
-| Method | Action | Trigger |
+| Method | Action | Notes |
 |---|---|---|
-| `POST /auth/change-password` | `auth.password-change` | Password changed |
-| `POST /auth/logout-all` | `auth.logout-all` | All sessions terminated |
-
-### ResetPasswordWithTokenUseCase
-
-| Method | Action | Trigger |
-|---|---|---|
-| `execute()` success | `auth.password-reset-success` | Password reset completed |
+| `POST /auth/change-password` | `auth.password-change` | after: { passwordChanged: true } |
+| `POST /auth/logout-all` | `auth.logout-all` | after: { sessionsRevoked: true } |
+| `POST /auth/reset-password` | `auth.password-reset-success` | after: { passwordReset, sessionsRevoked } |
 
 ---
 
@@ -192,8 +234,11 @@ List audit logs with pagination and filtering.
 - `limit` (default: 20, max: 100)
 - `actorId` — filter by actor
 - `action` — filter by action string
-- `entity` — filter by entity type
-- `startDate` / `endDate` — date range
+- `resourceType` — filter by resource type (preferred over `entity`)
+- `resourceId` — filter by resource ID (preferred over `entityId`)
+- `status` — `SUCCESS` or `FAILURE`
+- `requestId` — filter by request tracking ID
+- `from` / `to` — date range (ISO 8601, preferred over `startDate`/`endDate`)
 
 **Response:**
 ```json
@@ -227,8 +272,12 @@ interface AuditLogResponse {
   action: string;
   resourceType: string | null;
   resourceId: string | null;
-  status: 'SUCCESS' | 'FAILURE' | 'PARTIAL';
-  actor: { id: string | null; email: string | null; roleId: string | null } | null;
+  status: 'SUCCESS' | 'FAILURE';
+  actor: {
+    id: string | null;
+    email: string | null;
+    roleId: string | null;
+  };
   request: {
     requestId: string | null;
     ipAddress: string | null;

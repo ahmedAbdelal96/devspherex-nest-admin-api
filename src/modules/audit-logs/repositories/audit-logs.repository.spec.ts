@@ -2,8 +2,10 @@
  * AuditLogsRepository — Unit Tests
  *
  * Verifies:
- * - create() calls Prisma with sanitized data
- * - findAll() applies filters and pagination
+ * - create() calls Prisma with before/after/metadata stored separately
+ * - create() stores actorEmail, actorRoleId, ipAddress, status
+ * - findAll() applies all filters including requestId, status, resourceType/resourceId
+ * - findAll() applies date range filters (from/to)
  * - findById() returns record
  */
 
@@ -31,52 +33,120 @@ describe('AuditLogsRepository', () => {
   });
 
   describe('create()', () => {
-    it('calls prisma.auditLog.create with sanitized data', async () => {
+    it('stores before/after/metadata in separate fields', async () => {
       (prisma.auditLog.create as jest.Mock).mockResolvedValue({ id: 'audit-1' });
 
       await repository.create({
-        actorId: 'admin-1',
-        action: 'users.create',
-        entity: 'User',
-        entityId: 'user-1',
-        metadata: { id: 'user-1', email: 'new@test.com' },
-        ip: '192.168.1.1',
-        userAgent: 'Mozilla/5.0',
-        requestId: 'req-123',
-      });
-
-      expect(prisma.auditLog.create).toHaveBeenCalledWith({
-        data: {
-          actorId: 'admin-1',
-          action: 'users.create',
-          entity: 'User',
-          entityId: 'user-1',
-          metadata: { id: 'user-1', email: 'new@test.com' },
-          ip: '192.168.1.1',
-          userAgent: 'Mozilla/5.0',
-          requestId: 'req-123',
-        },
-      });
-    });
-
-    it('converts undefined fields to null', async () => {
-      (prisma.auditLog.create as jest.Mock).mockResolvedValue({ id: 'audit-1' });
-
-      await repository.create({
-        action: 'users.create',
+        action: 'users.update',
+        before: { id: 'user-1', name: 'Old' },
+        after: { id: 'user-1', name: 'New' },
+        metadata: { change: 'name' },
       });
 
       expect(prisma.auditLog.create).toHaveBeenCalledWith({
         data: {
           actorId: null,
-          action: 'users.create',
-          entity: null,
-          entityId: null,
-          metadata: undefined,
-          ip: null,
-          userAgent: null,
+          actorEmail: null,
+          actorRoleId: null,
+          action: 'users.update',
+          resourceType: null,
+          resourceId: null,
+          status: 'SUCCESS',
           requestId: null,
+          ipAddress: null,
+          userAgent: null,
+          before: { id: 'user-1', name: 'Old' },
+          after: { id: 'user-1', name: 'New' },
+          metadata: { change: 'name' },
         },
+      });
+    });
+
+    it('stores actorEmail and actorRoleId when provided', async () => {
+      (prisma.auditLog.create as jest.Mock).mockResolvedValue({ id: 'audit-1' });
+
+      await repository.create({
+        actorId: 'admin-1',
+        actorEmail: 'admin@test.com',
+        actorRoleId: 'role-admin',
+        action: 'users.create',
+      });
+
+      expect(prisma.auditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            actorId: 'admin-1',
+            actorEmail: 'admin@test.com',
+            actorRoleId: 'role-admin',
+          }),
+        }),
+      );
+    });
+
+    it('stores ipAddress when provided', async () => {
+      (prisma.auditLog.create as jest.Mock).mockResolvedValue({ id: 'audit-1' });
+
+      await repository.create({
+        action: 'users.create',
+        ipAddress: '192.168.1.100',
+      });
+
+      expect(prisma.auditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            ipAddress: '192.168.1.100',
+          }),
+        }),
+      );
+    });
+
+    it('stores status when provided', async () => {
+      (prisma.auditLog.create as jest.Mock).mockResolvedValue({ id: 'audit-1' });
+
+      await repository.create({
+        action: 'users.create',
+        status: 'FAILURE',
+      });
+
+      expect(prisma.auditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: 'FAILURE',
+          }),
+        }),
+      );
+    });
+
+    it('defaults status to SUCCESS when not provided', async () => {
+      (prisma.auditLog.create as jest.Mock).mockResolvedValue({ id: 'audit-1' });
+
+      await repository.create({ action: 'users.create' });
+
+      expect(prisma.auditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: 'SUCCESS',
+          }),
+        }),
+      );
+    });
+
+    it('converts undefined fields to null', async () => {
+      (prisma.auditLog.create as jest.Mock).mockResolvedValue({ id: 'audit-1' });
+
+      await repository.create({ action: 'users.create' });
+
+      expect(prisma.auditLog.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          actorId: null,
+          actorEmail: null,
+          actorRoleId: null,
+          resourceType: null,
+          resourceId: null,
+          requestId: null,
+          ipAddress: null,
+          userAgent: null,
+        }),
       });
     });
   });
@@ -108,31 +178,70 @@ describe('AuditLogsRepository', () => {
       );
     });
 
-    it('applies entity filter', async () => {
+    it('applies resourceType filter', async () => {
       (prisma.auditLog.findMany as jest.Mock).mockResolvedValue([]);
       (prisma.auditLog.count as jest.Mock).mockResolvedValue(0);
 
-      await repository.findAll({ entity: 'User', page: 1, limit: 20 });
+      await repository.findAll({ resourceType: 'User', page: 1, limit: 20 });
 
       expect(prisma.auditLog.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: expect.objectContaining({ entity: 'User' }),
+          where: expect.objectContaining({ resourceType: 'User' }),
         }),
       );
     });
 
-    it('applies date range filter', async () => {
+    it('applies resourceId filter', async () => {
       (prisma.auditLog.findMany as jest.Mock).mockResolvedValue([]);
       (prisma.auditLog.count as jest.Mock).mockResolvedValue(0);
-      const start = new Date('2026-01-01');
-      const end = new Date('2026-12-31');
 
-      await repository.findAll({ startDate: start, endDate: end, page: 1, limit: 20 });
+      await repository.findAll({ resourceId: 'user-123', page: 1, limit: 20 });
+
+      expect(prisma.auditLog.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ resourceId: 'user-123' }),
+        }),
+      );
+    });
+
+    it('applies status filter', async () => {
+      (prisma.auditLog.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.auditLog.count as jest.Mock).mockResolvedValue(0);
+
+      await repository.findAll({ status: 'SUCCESS', page: 1, limit: 20 });
+
+      expect(prisma.auditLog.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ status: 'SUCCESS' }),
+        }),
+      );
+    });
+
+    it('applies requestId filter', async () => {
+      (prisma.auditLog.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.auditLog.count as jest.Mock).mockResolvedValue(0);
+
+      await repository.findAll({ requestId: 'req-abc-123', page: 1, limit: 20 });
+
+      expect(prisma.auditLog.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ requestId: 'req-abc-123' }),
+        }),
+      );
+    });
+
+    it('applies date range filter (from/to)', async () => {
+      (prisma.auditLog.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.auditLog.count as jest.Mock).mockResolvedValue(0);
+      const from = new Date('2026-01-01');
+      const to = new Date('2026-12-31');
+
+      await repository.findAll({ from, to, page: 1, limit: 20 });
 
       expect(prisma.auditLog.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({
-            createdAt: { gte: start, lte: end },
+            createdAt: { gte: from, lte: to },
           }),
         }),
       );

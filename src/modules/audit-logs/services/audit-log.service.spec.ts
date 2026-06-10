@@ -2,11 +2,13 @@
  * AuditLogService — Unit Tests
  *
  * Verifies:
- * - Creates sanitized audit log records
- * - Includes action/resource/actor/request context
+ * - Creates sanitized audit log records with before/after/metadata stored separately
+ * - Includes actorId/actorEmail/actorRoleId when provided
+ * - Includes requestId/ipAddress/userAgent when provided
  * - Defaults status to SUCCESS
  * - Catches repository errors and does not throw
  * - Does not store raw sensitive data
+ * - Does not mutate original before/after objects
  */
 
 import { AuditLogService } from './audit-log.service';
@@ -29,31 +31,41 @@ describe('AuditLogService', () => {
   });
 
   describe('log()', () => {
-    it('creates a sanitized audit log record', async () => {
+    it('stores before, after, and metadata in separate fields', async () => {
+      await service.log({
+        action: AUDIT_ACTIONS.USERS_UPDATE,
+        resourceType: AUDIT_RESOURCE_TYPES.USER,
+        resourceId: 'user-1',
+        status: 'SUCCESS',
+        actor: { id: 'admin-1' },
+        before: { id: 'user-1', name: 'Old Name' },
+        after: { id: 'user-1', name: 'New Name' },
+        metadata: { change: 'name' },
+      });
+
+      const call = repository.create.mock.calls[0][0];
+      expect(call.before).toEqual({ id: 'user-1', name: 'Old Name' });
+      expect(call.after).toEqual({ id: 'user-1', name: 'New Name' });
+      expect(call.metadata).toEqual({ change: 'name' });
+    });
+
+    it('stores actorEmail and actorRoleId when provided', async () => {
       await service.log({
         action: AUDIT_ACTIONS.USERS_CREATE,
         resourceType: AUDIT_RESOURCE_TYPES.USER,
         resourceId: 'user-1',
-        status: 'SUCCESS',
-        actor: { id: 'admin-1', email: 'admin@test.com' },
-        after: { id: 'user-1', email: 'new@test.com' },
+        actor: { id: 'admin-1', email: 'admin@test.com', roleId: 'role-admin' },
       });
 
-      expect(repository.create).toHaveBeenCalledWith({
-        actorId: 'admin-1',
-        action: 'users.create',
-        entity: 'User',
-        entityId: 'user-1',
-        metadata: { id: 'user-1', email: 'new@test.com' },
-        ip: undefined,
-        userAgent: undefined,
-        requestId: undefined,
-      });
+      const call = repository.create.mock.calls[0][0];
+      expect(call.actorId).toBe('admin-1');
+      expect(call.actorEmail).toBe('admin@test.com');
+      expect(call.actorRoleId).toBe('role-admin');
     });
 
-    it('includes request context', async () => {
+    it('stores requestId, ipAddress, userAgent when provided', async () => {
       await service.log({
-        action: AUDIT_ACTIONS.USERS_UPDATE,
+        action: AUDIT_ACTIONS.USERS_CREATE,
         resourceType: AUDIT_RESOURCE_TYPES.USER,
         resourceId: 'user-1',
         actor: { id: 'admin-1' },
@@ -64,13 +76,10 @@ describe('AuditLogService', () => {
         },
       });
 
-      expect(repository.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          requestId: 'req-123',
-          ip: '192.168.1.1',
-          userAgent: 'Mozilla/5.0',
-        }),
-      );
+      const call = repository.create.mock.calls[0][0];
+      expect(call.requestId).toBe('req-123');
+      expect(call.ipAddress).toBe('192.168.1.1');
+      expect(call.userAgent).toBe('Mozilla/5.0');
     });
 
     it('defaults status to SUCCESS when not provided', async () => {
@@ -78,13 +87,41 @@ describe('AuditLogService', () => {
         action: AUDIT_ACTIONS.USERS_CREATE,
         resourceType: AUDIT_RESOURCE_TYPES.USER,
         resourceId: 'user-1',
+        actor: { id: 'admin-1' },
       });
 
-      expect(repository.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          action: 'users.create',
-        }),
-      );
+      const call = repository.create.mock.calls[0][0];
+      expect(call.status).toBe('SUCCESS');
+    });
+
+    it('uses provided status when given', async () => {
+      await service.log({
+        action: AUDIT_ACTIONS.USERS_CREATE,
+        resourceType: AUDIT_RESOURCE_TYPES.USER,
+        resourceId: 'user-1',
+        status: 'FAILURE',
+        actor: { id: 'admin-1' },
+      });
+
+      const call = repository.create.mock.calls[0][0];
+      expect(call.status).toBe('FAILURE');
+    });
+
+    it('sanitizes sensitive values in before snapshot', async () => {
+      await service.log({
+        action: AUDIT_ACTIONS.USERS_UPDATE,
+        resourceType: AUDIT_RESOURCE_TYPES.USER,
+        resourceId: 'user-1',
+        actor: { id: 'admin-1' },
+        before: {
+          id: 'user-1',
+          passwordHash: 'old_hash',
+        },
+      });
+
+      const call = repository.create.mock.calls[0][0];
+      const before = call.before as Record<string, unknown>;
+      expect(before['passwordHash']).toBe('<redacted>');
     });
 
     it('sanitizes sensitive values in after snapshot', async () => {
@@ -101,26 +138,9 @@ describe('AuditLogService', () => {
       });
 
       const call = repository.create.mock.calls[0][0];
-      const metadata = call.metadata as Record<string, unknown>;
-      expect(metadata['email']).toBe('new@test.com');
-      expect(metadata['password']).toBe('<redacted>');
-    });
-
-    it('sanitizes sensitive values in before snapshot', async () => {
-      await service.log({
-        action: AUDIT_ACTIONS.USERS_UPDATE,
-        resourceType: AUDIT_RESOURCE_TYPES.USER,
-        resourceId: 'user-1',
-        actor: { id: 'admin-1' },
-        before: {
-          id: 'user-1',
-          passwordHash: 'old_hash',
- },
-      });
-
-      const call = repository.create.mock.calls[0][0];
-      const metadata = call.metadata as Record<string, unknown>;
-      expect(metadata['passwordHash']).toBe('<redacted>');
+      const after = call.after as Record<string, unknown>;
+      expect(after['email']).toBe('new@test.com');
+      expect(after['password']).toBe('<redacted>');
     });
 
     it('sanitizes nested sensitive values in metadata', async () => {
@@ -167,6 +187,49 @@ describe('AuditLogService', () => {
       });
 
       expect(repository.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not mutate original before object', async () => {
+      const original = { password: 'secret123', name: 'John' };
+      const originalCopy = { ...original };
+
+      await service.log({
+        action: AUDIT_ACTIONS.USERS_UPDATE,
+        resourceType: AUDIT_RESOURCE_TYPES.USER,
+        resourceId: 'user-1',
+        actor: { id: 'admin-1' },
+        before: original,
+      });
+
+      expect(original).toEqual(originalCopy);
+    });
+
+    it('does not mutate original after object', async () => {
+      const original = { password: 'secret456', email: 'a@test.com' };
+      const originalCopy = { ...original };
+
+      await service.log({
+        action: AUDIT_ACTIONS.USERS_CREATE,
+        resourceType: AUDIT_RESOURCE_TYPES.USER,
+        resourceId: 'user-1',
+        actor: { id: 'admin-1' },
+        after: original,
+      });
+
+      expect(original).toEqual(originalCopy);
+    });
+
+    it('passes resourceType and resourceId to repository', async () => {
+      await service.log({
+        action: AUDIT_ACTIONS.USERS_UPDATE,
+        resourceType: AUDIT_RESOURCE_TYPES.USER,
+        resourceId: 'user-abc',
+        actor: { id: 'admin-1' },
+      });
+
+      const call = repository.create.mock.calls[0][0];
+      expect(call.resourceType).toBe('User');
+      expect(call.resourceId).toBe('user-abc');
     });
   });
 });
