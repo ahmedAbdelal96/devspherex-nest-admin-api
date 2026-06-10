@@ -50,7 +50,13 @@ All HTTP responses from this API are wrapped in a consistent envelope. Both succ
 | PUT/PATCH | Update | `{Resource} updated successfully` |
 | DELETE | Deletion | `{Resource} deleted successfully` |
 
-Controllers that return `{ message: string }` (e.g. auth logout) preserve their message in the response.
+### Internal Marker Behavior
+
+**No internal markers appear in JSON output.** The `ApiResponseInterceptor` uses a non-enumerable `Symbol.for('devspherex.apiResponseWrapped')` internally to prevent double-wrapping. This marker:
+
+- Is never enumerated by `Object.keys()`
+- Never appears in `JSON.stringify()` output
+- Is not visible to API clients
 
 ---
 
@@ -97,8 +103,8 @@ Controllers that return `{ message: string }` (e.g. auth logout) preserve their 
 
 ## Request ID Behavior
 
-- Client MAY send `x-request-id: <value>` header
-- If the value is valid (alphanumeric, ≤64 chars), it is reused
+- Client MAY send `x-request-id: <value>` header (alphanumeric, ≤64 chars)
+- If the value is valid, it is reused
 - If missing, invalid, or empty, a new 32-char hex ID is generated
 - The `requestId` is included in both success and error `meta`
 - The `x-request-id` header is always set on the response
@@ -107,7 +113,7 @@ Controllers that return `{ message: string }` (e.g. auth logout) preserve their 
 
 ## Validation Error Format
 
-When `ValidationPipe` rejects a request:
+`ValidationPipe` uses a custom `exceptionFactory` that produces `BadRequestException({ message, errors })`. The `GlobalExceptionFilter` formats these into `ApiErrorResponse`:
 
 ```json
 {
@@ -123,17 +129,71 @@ When `ValidationPipe` rejects a request:
 }
 ```
 
-- Sensitive field names (`password`, `otp`, `token`, etc.) are replaced with `"field"`
-- Raw values are stripped from messages
-- Nested validation errors are flattened
+### Nested Validation Fields
+
+Nested validation errors use dot-paths:
+
+```json
+{
+  "errors": [
+    { "field": "address.street", "message": "street is required", "code": "VALIDATION_FIELD_REQUIRED" },
+    { "field": "address.city", "message": "city is required", "code": "VALIDATION_FIELD_REQUIRED" }
+  ]
+}
+```
+
+### Sensitive Field Sanitization
+
+Sensitive field names are replaced with `"field"` case-insensitively:
+
+| Field | Sanitized To |
+|-------|-------------|
+| `password` | `field` |
+| `newPassword` | `field` |
+| `credentials.password` | `field` (dot-path) |
+| `auth.refreshToken` | `field` (dot-path) |
+| `otp` | `field` |
+| `resetToken` | `field` |
+| `token` | `field` |
+| `secret` | `field` |
+
+**Safe fields** (e.g. `email`, `roleId`, `firstName`) are **never** sanitized.
+
+### Validation Error Codes
+
+- `VALIDATION_FIELD_REQUIRED` — field is empty/not provided (isNotEmpty, required)
+- `VALIDATION_FIELD_INVALID` — field fails format/length/pattern constraints
+
+---
+
+## Message Envelope Detection
+
+`ApiResponseInterceptor` detects controller return objects that are message envelopes (not domain objects). Only these shapes trigger message extraction:
+
+| Shape | Example | Result |
+|-------|---------|--------|
+| `{ message }` | `{ message: 'Logged out' }` | `data: null`, `message: 'Logged out'` |
+| `{ message, data }` | `{ message: 'OK', data: {...} }` | `data` preserved |
+| `{ message, accessToken, refreshToken }` | auth login | `data: { accessToken, refreshToken }` |
+| `{ message, accessToken, refreshToken, user }` | auth login + user | `data: { accessToken, refreshToken, user }` |
+| `{ message, devOtp }` | password recovery OTP | `data: { devOtp }` |
+| `{ message, resetSessionToken, expiresIn }` | reset session | `data: { resetSessionToken, expiresIn }` |
+
+**NOT envelopes** — domain objects that happen to contain a `message` field are wrapped normally with `data` containing all fields:
+
+```json
+// This is a domain object, NOT an auth envelope:
+{ "message": "Record retrieved", "id": "u1", "email": "a@b.com" }
+// → { success: true, message: "Records retrieved", data: { id, email }, meta }
+```
 
 ---
 
 ## Prisma Error Mapping
 
 | Prisma Code | HTTP Status | Error Code | Client Message |
-|-------------|-------------|------------|---------------|
-| P2002 |409 | DB_UNIQUE_CONSTRAINT | A record with this value already exists |
+|-------------|-------------|------------|----------------|
+| P2002 | 409 | DB_UNIQUE_CONSTRAINT | A record with this value already exists |
 | P2025 | 404 | DB_RECORD_NOT_FOUND | The requested record was not found |
 | P2003 | 409 | DB_FOREIGN_KEY_CONSTRAINT | Operation failed due to invalid relation |
 | P2001 | 400 | DB_INVALID_QUERY | A required field is missing |
@@ -215,20 +275,54 @@ All unexpected errors (non-Error thrown values, runtime exceptions) return:
 ```
 src/common/
   api-response/
-    api-response.types.ts       — ApiSuccessResponse, isWrapped()
+    api-response.types.ts       — ApiSuccessResponse, isWrapped(), markWrapped()
     api-response.factory.ts      — buildSuccessResponse(), deriveMessage()
     api-response.interceptor.ts  — ApiResponseInterceptor (global)
     api-response.index.ts
- errors/
+  errors/
     app-error-codes.ts          — AppErrorCodes registry
     error-response.types.ts     — ApiErrorResponse, ApiFieldError
     app-exception.filter.ts      — GlobalExceptionFilter (global)
     prisma-error.mapper.ts       — mapPrismaError(), extractPrismaField()
-    validation-error.formatter.ts — formatValidationErrors()
+    validation-error.formatter.ts — formatValidationErrors() with dot-paths
     unknown-error.formatter.ts   — buildUnknownErrorResponse()
     index.ts
   request-context/
     request-id.util.ts           — generateRequestId(), getOrCreateRequestId()
-    request-id.middleware.ts     — RequestIdMiddleware (global)
+    request-id.middleware.ts     — functional requestIdMiddleware (global)
     index.ts
 ```
+
+---
+
+## Key Implementation Notes
+
+### Non-enumerable Marker (no JSON leakage)
+
+The interceptor uses `Symbol.for('devspherex.apiResponseWrapped')` set via `Object.defineProperty` with `enumerable: false`. This marker:
+
+- Prevents double-wrapping in multi-interceptor pipelines
+- Never appears in `JSON.stringify()` output
+- Never appears in `Object.keys(response)`
+
+### ValidationPipe exceptionFactory
+
+`main.ts` wires `ValidationPipe` with:
+
+```typescript
+exceptionFactory: (errors: ValidationError[]) =>
+  new BadRequestException({
+    message: 'Validation failed',
+    errors,
+  }),
+```
+
+This guarantees `GlobalExceptionFilter` receives `{ message, errors[] }` format with raw `ValidationError[]` objects, which are then formatted via `formatValidationErrors()`.
+
+### Message-Envelope Structural Detection
+
+The interceptor uses `isControllerMessageEnvelope()` which checks:
+1. Has `message` string property
+2. All non-message keys belong to `KNOWN_ENVELOPE_KEYS` set
+
+This prevents domain objects like `{ message: '...', id: 'u1', email: 'a@b.com' }` from being treated as auth envelopes.

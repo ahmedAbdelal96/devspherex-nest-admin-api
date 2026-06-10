@@ -1,7 +1,7 @@
 # Testing Strategy
 
 **Date:** 2026-06-10
-**Phase:** 6
+**Phase:** 6-R1
 
 ---
 
@@ -19,10 +19,11 @@ Tests are placed next to the files they test, following the NestJS convention:
 src/
   common/
     api-response/
-      api-response.interceptor.spec.ts       ← response wrapping
+      api-response.interceptor.spec.ts       ← response wrapping + marker leakage
     errors/
-      app-exception.filter.spec.ts            ← exception filter mapping
-      validation-error.formatter.spec.ts      ← validation formatting
+      app-exception.filter.spec.ts            ← exception filter mapping + exceptionFactory
+      validation-error.formatter.spec.ts      ← validation formatting + dot-paths
+      validation-error.integration.spec.ts    ← HTTP-level validation/error contract tests
     request-context/
       request-id.util.spec.ts                 ← request ID generation/reuse
   modules/auth/password-recovery/
@@ -133,11 +134,42 @@ This is the **recommended check before committing**.
 
 ## Current Limitations
 
-- **No integration tests** — require a real PostgreSQL instance
-- **No controller/http tests** — would require `INestApplication` setup
 - **No EMAIL/WHATSAPP/SMS provider tests** — channels are not implemented
 - **Smoke test** requires port 3105 to be free
-- **Quality gate** does not include smoke test (DB-dependent)
+
+---
+
+## Why HTTP-Level Integration Tests for Response/Error Contract
+
+Unit tests for `ApiResponseInterceptor` and `GlobalExceptionFilter` verify the logic in isolation. But response/error contracts have a critical requirement: **the JSON that actually reaches the HTTP client must not leak internal markers or sensitive data**.
+
+This cannot be fully verified with unit tests alone because:
+
+1. `Object.keys()` on a mock doesn't prove `JSON.stringify()` hides the property
+2. A mock `ExecutionContext` doesn't exercise the real Express request/response pipeline
+3. The `ValidationPipe` `exceptionFactory` behavior can only be verified end-to-end
+
+Therefore, `validation-error.integration.spec.ts` creates a **minimal NestJS app** with:
+- Same `ValidationPipe` config as `main.ts`
+- Same `GlobalExceptionFilter` wiring
+- Same `ApiResponseInterceptor` wiring
+- Same `requestIdMiddleware` wiring
+
+It uses `supertest` to make real HTTP calls and verify the actual JSON responses.
+
+This approach:
+- Does not require a real database
+- Does not require the full application
+- Verifies the actual HTTP contract (headers, status codes, JSON body shape)
+- Catches integration issues that unit tests miss
+
+```bash
+# Run integration tests with unit tests
+npm run test
+
+# Run coverage (includes integration tests)
+npm run test:cov
+```
 
 ---
 

@@ -2,6 +2,7 @@
  * GlobalExceptionFilter — Unit Tests
  *
  * Tests that exceptions are mapped to the standard ApiErrorResponse shape.
+ * Includes ValidationPipe exceptionFactory scenario.
  */
 
 import {
@@ -21,6 +22,12 @@ interface MockResponse {
   body: Record<string, unknown>;
 }
 
+interface ApiFieldError {
+  field: string;
+  message: string;
+  code: string;
+}
+
 function createMockHost(requestId = 'test-req-id', path = '/test', method = 'POST'): {
   host: { switchToHttp: () => { getResponse: () => Response; getRequest: () => Record<string, unknown> } };
   mockRes: MockResponse;
@@ -37,6 +44,14 @@ function createMockHost(requestId = 'test-req-id', path = '/test', method = 'POS
     }),
   };
   return { host, mockRes };
+}
+
+// Simulates what ValidationPipe exceptionFactory produces
+function createValidationException(errors: Array<{ property: string; constraints?: Record<string, string> }>) {
+  return new BadRequestException({
+    message: 'Validation failed',
+    errors,
+  });
 }
 
 describe('GlobalExceptionFilter', () => {
@@ -84,6 +99,81 @@ describe('GlobalExceptionFilter', () => {
     });
   });
 
+  describe('ValidationPipe exceptionFactory mapping', () => {
+    it('maps ValidationPipe exceptionFactory errors to VALIDATION_FAILED', () => {
+      const { host, mockRes } = createMockHost();
+      const exception = createValidationException([
+        { property: 'email', constraints: { isEmail: 'email must be an email' } },
+        { property: 'password', constraints: { minLength: 'password must be longer' } },
+      ]);
+      filter.catch(exception, host as never);
+
+      expect(mockRes.statusCode).toBe(400);
+      expect(mockRes.body['success']).toBe(false);
+      expect(mockRes.body['code']).toBe(AppErrorCodes.VALIDATION_FAILED);
+      expect(mockRes.body['message']).toBe('Validation failed');
+    });
+
+    it('includes field-level errors array', () => {
+      const { host, mockRes } = createMockHost();
+      const exception = createValidationException([
+        { property: 'email', constraints: { isEmail: 'email must be an email' } },
+        { property: 'password', constraints: { minLength: 'password must be longer' } },
+      ]);
+      filter.catch(exception, host as never);
+
+      const body = mockRes.body as { errors: ApiFieldError[] };
+      expect(Array.isArray(body.errors)).toBe(true);
+      expect(body.errors.length).toBe(2);
+    });
+
+    it('sanitizes password field to "field"', () => {
+      const { host, mockRes } = createMockHost();
+      const exception = createValidationException([
+        { property: 'password', constraints: { minLength: 'password must be longer' } },
+      ]);
+      filter.catch(exception, host as never);
+
+      const body = mockRes.body as { errors: ApiFieldError[] };
+      expect(body.errors[0].field).toBe('field');
+    });
+
+    it('marks isNotEmpty constraints as VALIDATION_FIELD_REQUIRED', () => {
+      const { host, mockRes } = createMockHost();
+      const exception = createValidationException([
+        { property: 'email', constraints: { isNotEmpty: 'email should not be empty' } },
+      ]);
+      filter.catch(exception, host as never);
+
+      const body = mockRes.body as { errors: ApiFieldError[] };
+      expect(body.errors[0].code).toBe(AppErrorCodes.VALIDATION_FIELD_REQUIRED);
+    });
+
+    it('marks isEmail constraints as VALIDATION_FIELD_INVALID', () => {
+      const { host, mockRes } = createMockHost();
+      const exception = createValidationException([
+        { property: 'email', constraints: { isEmail: 'email must be an email' } },
+      ]);
+      filter.catch(exception, host as never);
+
+      const body = mockRes.body as { errors: ApiFieldError[] };
+      expect(body.errors[0].code).toBe(AppErrorCodes.VALIDATION_FIELD_INVALID);
+    });
+
+    it('uses custom message from exceptionFactory', () => {
+      const { host, mockRes } = createMockHost();
+      const exception = new BadRequestException({
+        message: 'Custom validation message',
+        errors: [
+          { property: 'name', constraints: { isNotEmpty: 'name required' } },
+        ],
+      });
+      filter.catch(exception, host as never);
+
+      expect(mockRes.body['message']).toBe('Custom validation message');
+    });
+  });
+
   describe('Prisma error mapping', () => {
     it('maps P2002 to 409/DB_UNIQUE_CONSTRAINT', () => {
       const { host, mockRes } = createMockHost();
@@ -116,6 +206,18 @@ describe('GlobalExceptionFilter', () => {
       filter.catch(prismaError, host as never);
       expect(mockRes.statusCode).toBe(409);
       expect(mockRes.body['code']).toBe(AppErrorCodes.DB_FOREIGN_KEY_CONSTRAINT);
+    });
+
+    it('maps P2002 with meta.target to errors[0].field', () => {
+      const { host, mockRes } = createMockHost();
+      const prismaError = new Prisma.PrismaClientKnownRequestError('Unique constraint', {
+        code: 'P2002',
+        clientVersion: '7.0.0',
+        meta: { target: ['email'] },
+      }) as unknown as Prisma.PrismaClientKnownRequestError;
+      filter.catch(prismaError, host as never);
+      const body = mockRes.body as { errors: ApiFieldError[] };
+      expect(body.errors[0].field).toBe('email');
     });
 
     it('maps PrismaClientInitializationError to 503/DB_CONNECTION_ERROR', () => {

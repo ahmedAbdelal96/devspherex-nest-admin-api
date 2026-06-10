@@ -19,15 +19,28 @@ export interface ApiSuccessResponse<T = unknown> {
 }
 
 /**
- * Marker type for data that is already wrapped (prevents double-wrapping).
+ * Non-enumerable Symbol marker to prevent double-wrapping.
+ * Using Symbol.for ensures the marker is globally accessible but never
+ * appears in JSON.stringify() output (non-enumerable).
  */
+const WRAPPED_SYMBOL = Symbol.for('devspherex.apiResponseWrapped');
+
 export const WRAPPED_MARKER = '__api_response_wrapped__' as const;
 export type WrappedMarker = typeof WRAPPED_MARKER;
 
+/**
+ * Mark a response object so downstream interceptors skip re-wrapping.
+ * The marker is non-enumerable — it never appears in JSON output.
+ */
+export function markWrapped(obj: object): void {
+  Object.defineProperty(obj, WRAPPED_SYMBOL, {
+    value: true,
+    enumerable: false,
+    configurable: false,
+  });
+}
+
 export function isWrapped(value: unknown): boolean {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    WRAPPED_MARKER in value
-  );
+  if (typeof value !== 'object' || value === null) return false;
+  return Reflect.has(value, WRAPPED_SYMBOL);
 }

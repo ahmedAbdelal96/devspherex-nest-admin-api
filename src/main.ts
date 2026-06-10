@@ -1,5 +1,5 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe, Logger } from '@nestjs/common';
+import { ValidationPipe, Logger, BadRequestException, ValidationError } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module';
 import { GlobalExceptionFilter } from './common/errors/app-exception.filter';
@@ -27,6 +27,11 @@ async function bootstrap() {
         target: false,
         value: false,
       },
+      exceptionFactory: (errors: ValidationError[]) =>
+        new BadRequestException({
+          message: 'Validation failed',
+          errors,
+        }),
     }),
   );
 

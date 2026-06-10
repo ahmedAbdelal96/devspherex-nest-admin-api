@@ -19,9 +19,63 @@ import { Request } from 'express';
 import {
   ApiSuccessResponse,
   isWrapped,
-  WRAPPED_MARKER,
+  markWrapped,
 } from './api-response.types';
 import { buildSuccessResponse, buildEmptyResponse } from './api-response.factory';
+
+/**
+ * Known auth/service operation field names.
+ * These may coexist with `message` and still be considered part of an envelope.
+ */
+const KNOWN_ENVELOPE_KEYS = new Set([
+  'message',
+  'data',
+  'accessToken',
+  'refreshToken',
+  'user',
+  'devOtp',
+  'resetSessionToken',
+  'expiresIn',
+  'token',
+]);
+
+/**
+ * Detect whether a value is a controller message-envelope (not a domain object).
+ *
+ * Allowed shapes:
+ * A. { message }
+ * B. { message, data }
+ * C. { message, accessToken, refreshToken }
+ * D. { message, accessToken, refreshToken, user }
+ * E. { message, devOtp }
+ * F. { message, resetSessionToken, expiresIn }
+ *
+ * NOT an envelope: { message, id, body, ...other domain fields }
+ */
+function isControllerMessageEnvelope(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+
+  const obj = value as Record<string, unknown>;
+
+  // Must have a string message
+  if (!('message' in obj) || typeof obj['message'] !== 'string') {
+    return false;
+  }
+
+  // Extract non-message keys
+  const nonMessageKeys = Object.keys(obj).filter((k) => k !== 'message');
+
+  // Case A: only { message }
+  if (nonMessageKeys.length === 0) {
+    return true;
+  }
+
+  // All remaining keys must be known envelope keys
+  const allKnown = nonMessageKeys.every((k) => KNOWN_ENVELOPE_KEYS.has(k));
+  return allKnown;
+}
 
 @Injectable()
 export class ApiResponseInterceptor implements NestInterceptor {
@@ -38,15 +92,8 @@ export class ApiResponseInterceptor implements NestInterceptor {
           return buildEmptyResponse(request);
         }
 
-        // Extract message from { message: string } returns (auth controllers)
-        if (
-          typeof data === 'object' &&
-          !Array.isArray(data) &&
-          data !== null &&
-          'message' in data &&
-          typeof (data as Record<string, unknown>).message === 'string' &&
-          Object.keys(data).length <= 3
-        ) {
+        // Extract message from controller message-envelopes (auth responses)
+        if (isControllerMessageEnvelope(data)) {
           const { message, ...rest } = data as Record<string, unknown>;
           const payload = Object.keys(rest).length > 0 ? rest : null;
           const response: ApiSuccessResponse<unknown> = {
@@ -60,8 +107,8 @@ export class ApiResponseInterceptor implements NestInterceptor {
               method: request.method,
             },
           };
-          // Mark as wrapped so downstream interceptors don't re-wrap
-          (response as unknown as Record<string, unknown>)[WRAPPED_MARKER] = true;
+          // Mark as wrapped (non-enumerable Symbol — never appears in JSON)
+          markWrapped(response);
           return response;
         }
 
