@@ -31,19 +31,22 @@ interface ApiFieldError {
 function createMockHost(requestId = 'test-req-id', path = '/test', method = 'POST'): {
   host: { switchToHttp: () => { getResponse: () => Response; getRequest: () => Record<string, unknown> } };
   mockRes: MockResponse;
+  mockReq: Record<string, unknown>;
 } {
   const mockRes: MockResponse = { statusCode: 200, body: {} };
   const mockResponse = {
     status: (s: number) => { mockRes.statusCode = s; return mockResponse; },
     json: (body: Record<string, unknown>) => { mockRes.body = body; return mockResponse; },
   } as unknown as Response;
+  // Shared request object so observability set by filter is readable by test assertions
+  const mockReq: Record<string, unknown> = { requestId, path, method };
   const host = {
     switchToHttp: () => ({
       getResponse: () => mockResponse,
-      getRequest: () => ({ requestId, path, method }),
+      getRequest: () => mockReq,
     }),
   };
-  return { host, mockRes };
+  return { host, mockRes, mockReq };
 }
 
 // Simulates what ValidationPipe exceptionFactory produces
@@ -254,6 +257,67 @@ describe('GlobalExceptionFilter', () => {
       expect(meta['path']).toBe('/auth/login');
       expect(meta['method']).toBe('POST');
       expect(meta['timestamp']).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    });
+  });
+
+  describe('request observability attachment', () => {
+    it('attaches errorCode to req.observability on BadRequestException', () => {
+      const { mockReq, host } = createMockHost();
+      filter.catch(new BadRequestException('Bad input'), host as never);
+      expect(mockReq['observability']).toEqual({
+        errorCode: AppErrorCodes.BAD_REQUEST,
+        errorMessage: 'Bad input',
+      });
+    });
+
+    it('attaches errorCode to req.observability on UnauthorizedException', () => {
+      const { mockReq, host } = createMockHost();
+      filter.catch(new UnauthorizedException('Not authenticated'), host as never);
+      expect(mockReq['observability']).toEqual({
+        errorCode: AppErrorCodes.AUTH_UNAUTHORIZED,
+        errorMessage: 'Not authenticated',
+      });
+    });
+
+    it('attaches errorCode to req.observability on NotFoundException', () => {
+      const { mockReq, host } = createMockHost();
+      filter.catch(new NotFoundException('Resource not found'), host as never);
+      expect(mockReq['observability']).toEqual({
+        errorCode: AppErrorCodes.NOT_FOUND,
+        errorMessage: 'Resource not found',
+      });
+    });
+
+    it('attaches errorCode to req.observability on generic Error', () => {
+      const { mockReq, host } = createMockHost();
+      filter.catch(new Error('Something broke'), host as never);
+      const obs = mockReq['observability'] as Record<string, unknown>;
+      expect(obs).toBeDefined();
+      expect(obs['errorCode']).toBe(AppErrorCodes.INTERNAL_SERVER_ERROR);
+    });
+
+    it('attaches errorCode to req.observability on unknown thrown value', () => {
+      const { mockReq, host } = createMockHost();
+      filter.catch('not an Error', host as never);
+      const obs = mockReq['observability'] as Record<string, unknown>;
+      expect(obs).toBeDefined();
+      expect(obs['errorCode']).toBe(AppErrorCodes.INTERNAL_SERVER_ERROR);
+    });
+
+    it('observability does not include stack trace or raw exception', () => {
+      const { mockReq, host } = createMockHost();
+      filter.catch(new Error('password=secret'), host as never);
+      const obs = mockReq['observability'] as Record<string, unknown>;
+      expect(obs).not.toHaveProperty('stack');
+      expect(obs).not.toHaveProperty('exception');
+      expect(obs['errorMessage']).not.toContain('secret');
+    });
+
+    it('observability errorMessage is sanitized of sensitive patterns', () => {
+      const { mockReq, host } = createMockHost();
+      filter.catch(new BadRequestException('password=supersecret token=abc123'), host as never);
+      const obs = mockReq['observability'] as Record<string, unknown>;
+      expect(obs['errorMessage']).toBe('password: <redacted> token: <redacted>');
     });
   });
 });

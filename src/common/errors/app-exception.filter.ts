@@ -42,6 +42,12 @@ function buildErrorResponse(
   request: Request,
   errors: ApiErrorResponse['errors'] = [],
 ): ApiErrorResponse {
+  // Attach observability metadata so ApiRequestObservabilityInterceptor can read errorCode
+  (request as unknown as Record<string, unknown>)['observability'] = {
+    errorCode: code,
+    errorMessage: message,
+  };
+
   return {
     success: false,
     message,
@@ -154,11 +160,17 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     // Handle generic Error
     if (exception instanceof Error) {
       const isProduction = process.env['NODE_ENV'] === 'production';
+      const rawMessage = exception.message;
       const message = isProduction
         ? 'An unexpected error occurred. Please try again later.'
-        : exception.message;
+        : this.sanitizeMessage(rawMessage);
 
       this.logger.error(`Unhandled exception: ${exception.message}`, exception.stack);
+
+      (request as unknown as Record<string, unknown>)['observability'] = {
+        errorCode: AppErrorCodes.INTERNAL_SERVER_ERROR,
+        errorMessage: message,
+      };
 
       response.status(HttpStatus.INTERNAL_SERVER_ERROR).json(
         buildErrorResponse(
@@ -168,11 +180,14 @@ export class GlobalExceptionFilter implements ExceptionFilter {
           request,
         ),
       );
-      return;
     }
 
     // Handle unknown thrown values (non-Error)
     this.logger.error(`Unknown thrown value: ${String(exception)}`);
+    (request as unknown as Record<string, unknown>)['observability'] = {
+      errorCode: AppErrorCodes.INTERNAL_SERVER_ERROR,
+      errorMessage: 'An unexpected error occurred. Please try again later.',
+    };
     response.status(HttpStatus.INTERNAL_SERVER_ERROR).json(
       buildUnknownErrorResponse(getMeta(request)),
     );

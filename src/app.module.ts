@@ -11,6 +11,7 @@ import { UsersModule } from './modules/users/users.module';
 import { RolesModule } from './modules/roles/roles.module';
 import { PermissionsModule } from './modules/permissions/permissions.module';
 import { AuditLogsModule } from './modules/audit-logs/audit-logs.module';
+import { ApiRequestLogsModule } from './modules/api-request-logs/api-request-logs.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { AuditLogsModule } from './modules/audit-logs/audit-logs.module';
     RolesModule,
     PermissionsModule,
     AuditLogsModule,
+    ApiRequestLogsModule,
   ],
   providers: [
     {

@@ -83,6 +83,12 @@ export function createMockPrismaService() {
     refreshToken: {
       updateMany: jest.fn(),
     },
+    apiRequestLog: {
+      create: jest.fn(),
+      findMany: jest.fn(),
+      findUnique: jest.fn(),
+      count: jest.fn(),
+    },
     $transaction: jest.fn(),
     $connect: jest.fn(),
     $disconnect: jest.fn(),

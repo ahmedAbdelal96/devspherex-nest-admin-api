@@ -1,7 +1,7 @@
 # Testing Strategy
 
-**Date:** 2026-06-10
-**Phase:** 7-A-R1
+**Date:** 2026-06-11
+**Phase:** 7-B
 
 ---
 
@@ -63,6 +63,14 @@ src/
       audit-log.service.spec.ts                  ← non-blocking audit logging (before/after/metadata separate)
     utils/
       audit-context.util.spec.ts                 ← request context + actor extraction
+  modules/api-request-logs/
+    interceptors/
+      api-request-observability.interceptor.spec.ts  ← unit: success/failure logging, skip paths, user/IP extraction, errorCode
+      api-request-observability.integration.spec.ts  ← integration: real HTTP via supertest, Phase 6 contract preserved
+    repositories/
+      api-request-logs.repository.spec.ts           ← create, findAll, findById
+    services/
+      api-request-log.service.spec.ts                ← non-blocking logging behavior
   test-utils/
     mocks.ts                                     ← shared mock factories
 ```
