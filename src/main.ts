@@ -5,6 +5,7 @@ import { AppModule } from './app.module';
 import { GlobalExceptionFilter } from './common/errors/app-exception.filter';
 import { ApiResponseInterceptor } from './common/api-response/api-response.interceptor';
 import { requestIdMiddleware } from './common/request-context/request-id.middleware';
+import { setupSwagger } from './common/swagger/swagger.config';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
@@ -43,6 +44,9 @@ async function bootstrap() {
 
   // Enable CORS
   app.enableCors();
+
+  // Swagger / OpenAPI documentation — environment-aware (SWAGGER_ENABLED=true)
+  setupSwagger(app);
 
   // Get config
   const configService = app.get(ConfigService);

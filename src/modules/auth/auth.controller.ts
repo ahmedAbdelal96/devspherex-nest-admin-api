@@ -39,6 +39,18 @@ import {
 import { RequestPasswordRecoveryUseCase } from './password-recovery/use-cases/request-password-recovery.use-case';
 import { VerifyPasswordRecoveryOtpUseCase } from './password-recovery/use-cases/verify-password-recovery-otp.use-case';
 import { ResetPasswordWithTokenUseCase } from './password-recovery/use-cases/reset-password-with-token.use-case';
+import {
+  ApiRegisterDocs,
+  ApiLoginDocs,
+  ApiLogoutDocs,
+  ApiLogoutAllDocs,
+  ApiRefreshDocs,
+  ApiMeDocs,
+  ApiChangePasswordDocs,
+  ApiForgotPasswordDocs,
+  ApiVerifyPasswordRecoveryOtpDocs,
+  ApiResetPasswordDocs,
+} from './swagger/auth.swagger';
 
 @Controller('auth')
 export class AuthController {
@@ -58,6 +70,7 @@ export class AuthController {
 
   @Public()
   @Post('register')
+  @ApiRegisterDocs()
   async register(@Body() dto: RegisterDto): Promise<AuthResponseDto> {
     return this.registerUseCase.execute(dto);
   }
@@ -65,6 +78,7 @@ export class AuthController {
   @Public()
   @Post('login')
   @HttpCode(HttpStatus.OK)
+  @ApiLoginDocs()
   async login(@Body() dto: LoginDto): Promise<AuthResponseDto> {
     return this.loginUseCase.execute(dto);
   }
@@ -72,6 +86,7 @@ export class AuthController {
   @Authenticated()
   @Post('logout')
   @HttpCode(HttpStatus.OK)
+  @ApiLogoutDocs()
   async logout(
     @CurrentUser('id') userId: string,
     @Body() dto: LogoutDto,
@@ -83,6 +98,7 @@ export class AuthController {
   @Authenticated()
   @Post('logout-all')
   @HttpCode(HttpStatus.OK)
+  @ApiLogoutAllDocs()
   async logoutAll(
     @CurrentUser() currentUser: { id: string; email?: string; roleId?: string },
     @Req() req: Request,
@@ -102,12 +118,14 @@ export class AuthController {
   @Public()
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
+  @ApiRefreshDocs()
   async refresh(@Body() dto: RefreshTokenDto): Promise<RefreshTokenResponseDto> {
     return this.refreshTokenUseCase.execute(dto.refreshToken);
   }
 
   @Authenticated()
   @Get('me')
+  @ApiMeDocs()
   async getMe(@CurrentUser('id') userId: string) {
     return this.getMeUseCase.execute(userId);
   }
@@ -115,6 +133,7 @@ export class AuthController {
   @Authenticated()
   @Post('change-password')
   @HttpCode(HttpStatus.OK)
+  @ApiChangePasswordDocs()
   async changePassword(
     @CurrentUser() currentUser: { id: string; email?: string; roleId?: string },
     @Body() dto: ChangePasswordDto,
@@ -136,6 +155,7 @@ export class AuthController {
   @Public()
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
+  @ApiForgotPasswordDocs()
   async forgotPassword(
     @Body() dto: RequestPasswordRecoveryDto,
     @Req() req: Request,
@@ -167,6 +187,7 @@ export class AuthController {
   @Public()
   @Post('verify-password-recovery-otp')
   @HttpCode(HttpStatus.OK)
+  @ApiVerifyPasswordRecoveryOtpDocs()
   async verifyPasswordRecoveryOtp(
     @Body() dto: VerifyPasswordRecoveryOtpDto,
   ): Promise<{ resetSessionToken: string; expiresIn: number }> {
@@ -176,6 +197,7 @@ export class AuthController {
   @Public()
   @Post('reset-password')
   @HttpCode(HttpStatus.OK)
+  @ApiResetPasswordDocs()
   async resetPassword(
     @Body() dto: ResetPasswordWithTokenDto,
     @Req() req: Request,

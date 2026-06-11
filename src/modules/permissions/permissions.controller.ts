@@ -17,6 +17,11 @@ import {
   ListGroupedPermissionsUseCase,
   GetPermissionByIdUseCase,
 } from './use-cases';
+import {
+  ApiListPermissionsDocs,
+  ApiListGroupedPermissionsDocs,
+  ApiGetPermissionDocs,
+} from './swagger/permissions.swagger';
 
 @Controller('permissions')
 export class PermissionsController {
@@ -28,18 +33,21 @@ export class PermissionsController {
 
   @Get()
   @Permissions(SYSTEM_PERMISSION_KEYS.PERMISSIONS.READ)
+  @ApiListPermissionsDocs()
   async list(@Query() query: ListPermissionsQueryDto): Promise<ListPermissionsResponseDto> {
     return this.listPermissionsUseCase.execute(query);
   }
 
   @Get('grouped')
   @Permissions(SYSTEM_PERMISSION_KEYS.PERMISSIONS.GROUPED_READ)
+  @ApiListGroupedPermissionsDocs()
   async listGrouped(): Promise<ListGroupedPermissionsResponseDto> {
     return this.listGroupedPermissionsUseCase.execute();
   }
 
   @Get(':id')
   @Permissions(SYSTEM_PERMISSION_KEYS.PERMISSIONS.READ)
+  @ApiGetPermissionDocs()
   async getById(@Param('id', ParseUUIDPipe) id: string) {
     return this.getPermissionByIdUseCase.execute(id);
   }

@@ -37,6 +37,15 @@ import {
   UpdateRolePermissionsUseCase,
   DuplicateRoleUseCase,
 } from './use-cases';
+import {
+  ApiCreateRoleDocs,
+  ApiListRolesDocs,
+  ApiGetRoleDocs,
+  ApiUpdateRoleDocs,
+  ApiDeleteRoleDocs,
+  ApiUpdateRolePermissionsDocs,
+  ApiDuplicateRoleDocs,
+} from './swagger/roles.swagger';
 
 @Controller('roles')
 export class RolesController {
@@ -53,6 +62,7 @@ export class RolesController {
 
   @Post()
   @Permissions(SYSTEM_PERMISSION_KEYS.ROLES.CREATE)
+  @ApiCreateRoleDocs()
   async create(
     @Body() dto: CreateRoleDto,
     @CurrentUser() currentUser: { id: string; email?: string; roleId?: string },
@@ -73,18 +83,21 @@ export class RolesController {
 
   @Get()
   @Permissions(SYSTEM_PERMISSION_KEYS.ROLES.READ)
+  @ApiListRolesDocs()
   async list(@Query() query: ListRolesQueryDto): Promise<PaginatedRolesResponseDto> {
     return this.listRolesUseCase.execute(query);
   }
 
   @Get(':id')
   @Permissions(SYSTEM_PERMISSION_KEYS.ROLES.READ)
+  @ApiGetRoleDocs()
   async getById(@Param('id', ParseUUIDPipe) id: string) {
     return this.getRoleByIdUseCase.execute(id);
   }
 
   @Put(':id')
   @Permissions(SYSTEM_PERMISSION_KEYS.ROLES.UPDATE)
+  @ApiUpdateRoleDocs()
   async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateRoleDto,
@@ -107,6 +120,7 @@ export class RolesController {
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @Permissions(SYSTEM_PERMISSION_KEYS.ROLES.DELETE)
+  @ApiDeleteRoleDocs()
   async delete(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser('id') currentUserId: string,
@@ -125,6 +139,7 @@ export class RolesController {
 
   @Put(':id/permissions')
   @Permissions(SYSTEM_PERMISSION_KEYS.ROLES.PERMISSIONS_UPDATE)
+  @ApiUpdateRolePermissionsDocs()
   async updatePermissions(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateRolePermissionsDto,
@@ -146,6 +161,7 @@ export class RolesController {
 
   @Post(':id/duplicate')
   @Permissions(SYSTEM_PERMISSION_KEYS.ROLES.DUPLICATE)
+  @ApiDuplicateRoleDocs()
   async duplicate(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: DuplicateRoleDto,

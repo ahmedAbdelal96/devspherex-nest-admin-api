@@ -40,6 +40,17 @@ import {
   GetUserEffectivePermissionsUseCase,
   UpdateUserPermissionOverridesUseCase,
 } from './use-cases';
+import {
+  ApiCreateUserDocs,
+  ApiListUsersDocs,
+  ApiGetUserDocs,
+  ApiUpdateUserDocs,
+  ApiDeleteUserDocs,
+  ApiUpdateUserStatusDocs,
+  ApiUpdateUserRoleDocs,
+  ApiGetEffectivePermissionsDocs,
+  ApiUpdatePermissionOverridesDocs,
+} from './swagger/users.swagger';
 
 @Controller('users')
 export class UsersController {
@@ -58,6 +69,7 @@ export class UsersController {
 
   @Post()
   @Permissions(SYSTEM_PERMISSION_KEYS.USERS.CREATE)
+  @ApiCreateUserDocs()
   async create(
     @Body() dto: CreateUserDto,
     @CurrentUser() currentUser: { id: string; email?: string; roleId?: string },
@@ -78,18 +90,21 @@ export class UsersController {
 
   @Get()
   @Permissions(SYSTEM_PERMISSION_KEYS.USERS.READ)
+  @ApiListUsersDocs()
   async list(@Query() query: ListUsersQueryDto): Promise<PaginatedUsersResponseDto> {
     return this.listUsersUseCase.execute(query);
   }
 
   @Get(':id')
   @Permissions(SYSTEM_PERMISSION_KEYS.USERS.READ)
+  @ApiGetUserDocs()
   async getById(@Param('id', ParseUUIDPipe) id: string) {
     return this.getUserByIdUseCase.execute(id);
   }
 
   @Put(':id')
   @Permissions(SYSTEM_PERMISSION_KEYS.USERS.UPDATE)
+  @ApiUpdateUserDocs()
   async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateUserDto,
@@ -100,6 +115,7 @@ export class UsersController {
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @Permissions(SYSTEM_PERMISSION_KEYS.USERS.DELETE)
+  @ApiDeleteUserDocs()
   async delete(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser('id') currentUserId: string,
@@ -109,6 +125,7 @@ export class UsersController {
 
   @Put(':id/status')
   @Permissions(SYSTEM_PERMISSION_KEYS.USERS.STATUS_UPDATE)
+  @ApiUpdateUserStatusDocs()
   async updateStatus(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateUserStatusDto,
@@ -130,6 +147,7 @@ export class UsersController {
 
   @Put(':id/role')
   @Permissions(SYSTEM_PERMISSION_KEYS.USERS.ROLE_UPDATE)
+  @ApiUpdateUserRoleDocs()
   async updateRole(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateUserRoleDto,
@@ -151,12 +169,14 @@ export class UsersController {
 
   @Get(':id/effective-permissions')
   @Permissions(SYSTEM_PERMISSION_KEYS.USERS.PERMISSIONS_READ)
+  @ApiGetEffectivePermissionsDocs()
   async getEffectivePermissions(@Param('id', ParseUUIDPipe) id: string) {
     return this.getUserEffectivePermissionsUseCase.execute(id);
   }
 
   @Put(':id/permission-overrides')
   @Permissions(SYSTEM_PERMISSION_KEYS.USERS.PERMISSIONS_OVERRIDE)
+  @ApiUpdatePermissionOverridesDocs()
   async updatePermissionOverrides(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateUserPermissionOverridesDto,

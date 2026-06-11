@@ -18,6 +18,10 @@ import { ListApiRequestLogsQueryDto } from './dto/list-api-request-logs-query.dt
 import { ListApiRequestLogsUseCase } from './use-cases/list-api-request-logs.use-case';
 import { GetApiRequestLogUseCase } from './use-cases/get-api-request-log.use-case';
 import { toApiRequestLogResponse } from './mappers/api-request-log-response.mapper';
+import {
+  ApiListApiRequestLogsDocs,
+  ApiGetApiRequestLogDocs,
+} from './swagger/api-request-logs.swagger';
 
 @Controller('api-request-logs')
 export class ApiRequestLogsController {
@@ -28,6 +32,7 @@ export class ApiRequestLogsController {
 
   @Get()
   @Permissions(SYSTEM_PERMISSION_KEYS.API_REQUEST_LOGS.READ)
+  @ApiListApiRequestLogsDocs()
   async list(@Query() query: ListApiRequestLogsQueryDto) {
     const result = await this.listApiRequestLogsUseCase.execute(query);
     return {
@@ -38,6 +43,7 @@ export class ApiRequestLogsController {
 
   @Get(':id')
   @Permissions(SYSTEM_PERMISSION_KEYS.API_REQUEST_LOGS.READ)
+  @ApiGetApiRequestLogDocs()
   async getOne(@Param('id', ParseUUIDPipe) id: string) {
     const log = await this.getApiRequestLogUseCase.execute(id);
     return toApiRequestLogResponse(log);
