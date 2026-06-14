@@ -235,7 +235,7 @@ describe('PasswordRecoveryTokenService', () => {
 
 **File:** `src/test-utils/seed.spec.ts`
 
-Tests seed registry validation and logger sanitization without requiring a database:
+Tests seed registry validation, helper functions, logger sanitization, and role permission safety without requiring a database:
 
 ```bash
 npm run test -- --testPathPattern="seed.spec"
@@ -247,9 +247,14 @@ npm run test -- --testPathPattern="seed.spec"
 |---|---|
 | `Seed Registry` — seeder names | No duplicate seeder names |
 | `Seed Registry` — dependency order | permissions < roles < users order |
+| `Seed Registry` — reset order | getSeedersReversed returns users < roles < permissions |
 | `Seed Registry` — reset functions | All seeders have reset functions |
 | `Seed Registry` — dependencies declared | Roles depends on permissions, users on roles |
-| `Seed Logger sanitization` | Password, token, hash fields are redacted |
-| `Admin password resolution` | SEED_ADMIN_PASSWORD env var respected; production requires it |
+| `parseSeedMode` | Defaults to upsert, handles `--mode=upsert/reset`, case-insensitive, trims whitespace |
+| `isResetAllowed` | False when unset, false for `'false'` string, true only for `'true'` |
+| `Seed Logger sanitization` | Password, token, hash, secret, credential, otp fields are redacted (case-insensitive) |
+| `Role permission safety` | `seedRoles` does NOT call `deleteMany`; `resetRoles` DOES call `deleteMany` (verified via code inspection) |
+| `Admin password resolution` | SEED_ADMIN_PASSWORD env var respected; production requires it, dev does not |
+| `seed.helpers exports` | Both functions are callable without side effects |
 
 > Note: Seed runner integration (actual upsert/reset with a database) requires a running PostgreSQL instance and is tested manually via `npm run db:seed` and `ALLOW_SEED_RESET=true npm run db:seed:reset`.

@@ -92,7 +92,7 @@ It does **not** delete all rows blindly.
 
 | Type | Count | Source |
 |------|-------|--------|
-| Permissions | 23 | `SYSTEM_PERMISSIONS` (central registry) |
+| Permissions | 24 | `SYSTEM_PERMISSIONS` (central registry) |
 | Roles | 3 | `super-admin`, `admin`, `viewer` |
 | Users | 1 | `admin@example.com` |
 
@@ -162,3 +162,85 @@ All acceptance criteria met:
 - Package scripts added
 - Tests added (15 passing)
 - Build, lint, prisma, permissions, tests, coverage, smoke all pass
+
+---
+
+## Phase 9-R1 — Post-Commit Repair (fix: harden seed safety)
+
+**Commit:** `fix(seed): harden seed safety and verify execution`
+**Blockers fixed:**
+1. `temp` database creation (was missing, causing seed to fail on fresh local setup)
+2. Documentation permission count (23 → 24)
+3. `rolePermission.deleteMany` removed from upsert path (preserves custom role-permission rows)
+4. Test coverage expanded (15 → 39 tests)
+
+### What Changed
+
+| File | Change |
+|------|--------|
+| `prisma/seed/modules/roles.seed.ts` | Removed `rolePermission.deleteMany` from `seedRoles` — now only creates missing links |
+| `prisma/seed/seed.helpers.ts` | New file: `parseSeedMode`, `isResetAllowed` (pure, testable) |
+| `prisma/seed/seed.registry.ts` | Added `getSeedersReversed()` for reset dependency ordering |
+| `prisma/seed/main.seed.ts` | Uses helpers; imports `dotenv/config` before DB connection |
+| `src/test-utils/seed.spec.ts` | Expanded from 15 to 39 tests covering registry order, reset guard, mode parsing, role-permission safety, logger sanitization, production password behavior |
+| `docs/database/seed-system.md` | Updated "23" → "24" permissions; added Local Database Setup and Upsert Mode Safety sections |
+| `docs/qa/phase-9-modular-prisma-seed-system-qa-report.md` | Updated permissions count; added Phase 9-R1 section |
+
+### Role Permission Safety Fix
+
+**Before (Phase 9):**
+```typescript
+// In seedRoles — ran on every upsert, deleting ALL existing role-permission links
+await prisma.rolePermission.deleteMany({ where: { roleId } });
+for (const permKey of roleDef.permissionKeys) { ... }
+```
+
+**After (Phase 9-R1):**
+```typescript
+// Additive only — creates missing links, preserves custom links added by template user
+for (const permKey of roleDef.permissionKeys) {
+  const perm = await prisma.permission.findUnique({ where: { key: permKey } });
+  if (!perm) { logger.warn(`Permission not found: ${permKey}`); continue; }
+  const existingRp = await prisma.rolePermission.findUnique({
+    where: { roleId_permissionId: { roleId, permissionId: perm.id } },
+  });
+  if (!existingRp) {
+    await prisma.rolePermission.create({ data: { roleId, permissionId: perm.id } });
+  }
+}
+```
+
+### Seed Verification Results
+
+```bash
+npm run db:seed                               # ✅ exit 0 — 24 permissions, 3 roles, 1 user created
+npm run db:seed:reset                         # ✅ exit 1 — "Reset guard rejected" (ALLOW_SEED_RESET not set)
+ALLOW_SEED_RESET=true npm run db:seed:reset   # ✅ exit 0 — deleted and reseeded all seed data
+```
+
+### Phase 9-R1 Validation Results
+
+| Check | Result |
+|-------|--------|
+| `npm install` | ✅ Pass |
+| `npx prisma format` | ✅ Pass |
+| `npx prisma generate` | ✅ Pass |
+| `npx prisma validate` | ✅ Pass |
+| `npm run build` | ✅ Pass |
+| `npm run lint` | ✅ Pass |
+| `npx ts-node scripts/validate-permissions.ts` | ✅ Pass |
+| `npm run test` | ✅ Pass |
+| `npm run test:cov` | ✅ Pass |
+| `npm run test:smoke` | ✅ Pass |
+| `npm run quality:check` | ✅ Pass |
+| Seed tests (`seed.spec.ts`) | ✅ 39 passed |
+
+### Decision
+
+**Phase 9-R1: Closed**
+
+All 4 blockers resolved:
+- `temp` database can be created via Node.js `pg` module (documented)
+- Documentation corrected to 24 permissions
+- Role permission upsert safety fixed — no more `deleteMany` in upsert path
+- Tests expanded to 39 covering all critical safety invariants

@@ -126,9 +126,8 @@ export async function seedRoles(ctx: SeedContext): Promise<SeedStats> {
       updated++;
     }
 
-    // Connect permissions — first clear existing, then upsert
-    await prisma.rolePermission.deleteMany({ where: { roleId } });
-
+    // Connect seed permissions — additive only, never deletes existing links.
+    // This preserves any custom role-permission rows the template user may have added.
     for (const permKey of roleDef.permissionKeys) {
       const perm = await prisma.permission.findUnique({ where: { key: permKey } });
       if (!perm) {

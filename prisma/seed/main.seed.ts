@@ -12,37 +12,18 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 import { getSeeders, getSeedersReversed } from './seed.registry';
 import { createSeedLogger } from './seed.logger';
-import type { SeedContext, SeedMode } from './seed.types';
-
-// ─── Mode Parsing ─────────────────────────────────────────────────────────────
-
-function parseMode(): SeedMode {
-  const args = process.argv.slice(2);
-  for (const arg of args) {
-    if (arg.startsWith('--mode=')) {
-      const value = arg.split('=')[1]!.trim().toLowerCase();
-      if (value === 'reset') return 'reset';
-      if (value === 'upsert') return 'upsert';
-      console.error(`[SEED] Unknown mode: "${value}". Use --mode=upsert or --mode=reset`);
-      process.exit(1);
-    }
-  }
-  return 'upsert';
-}
-
-function isResetAllowed(): boolean {
-  return process.env['ALLOW_SEED_RESET'] === 'true';
-}
+import { parseSeedMode, isResetAllowed } from './seed.helpers';
+import type { SeedContext } from './seed.types';
 
 // ─── Main ──────────────────────────────────────────────────────────────────────
 
 async function main() {
-  const mode = parseMode();
+  const mode = parseSeedMode(process.argv.slice(2));
   const logger = createSeedLogger(mode);
 
   // Guard reset mode
   if (mode === 'reset') {
-    if (!isResetAllowed()) {
+    if (!isResetAllowed(process.env)) {
       logger.error(
         'Reset mode requires ALLOW_SEED_RESET=true environment variable. ' +
         ' refusing to run to protect production data.',

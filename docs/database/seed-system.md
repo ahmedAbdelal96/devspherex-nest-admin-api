@@ -88,7 +88,7 @@ ALLOW_SEED_RESET=true npm run db:seed:reset
 
 ## Seeded Data
 
-### Permissions (23 total)
+### Permissions (24 total, from SYSTEM_PERMISSIONS)
 
 All permissions are sourced directly from `SYSTEM_PERMISSIONS` (the central source of truth in `src/common/rbac/system-permissions.ts`). No manual duplication.
 
@@ -98,7 +98,7 @@ Groups: Auth, Users, Roles, Permissions, Audit Logs, API Request Logs, System.
 
 | Role | Slug | Permissions |
 |------|------|-------------|
-| Super Admin | `super-admin` | All 23 system permissions |
+| Super Admin | `super-admin` | All 24 system permissions |
 | Admin | `admin` | Full admin subset (users, roles management + read on permissions/audit) |
 | Viewer | `viewer` | Read-only permissions only |
 
@@ -145,3 +145,37 @@ In reset mode, seeders run in **reverse** order (users → roles → permissions
 - Reset mode is guarded — it refuses to run without `ALLOW_SEED_RESET=true`
 - No production database should be reset without explicit opt-in
 - Seed-owned records are identified by stable keys/slugs/emails, not by scanning all records
+
+---
+
+## Local Database Setup
+
+If running seed against a local database (e.g. from `.env` `DATABASE_URL`):
+
+1. Ensure the database exists. If it does not exist on `localhost`, create it:
+   ```bash
+   # Using Node.js (requires pg package)
+   node -e "const{Pool}=require('pg');new Pool({connectionString:'postgresql://user:pass@localhost:5432/postgres'}).query('CREATE DATABASE mydb').then(r=>{console.log('created');process.exit(0)}).catch(e=>{console.error(e.message);process.exit(1)})"
+   ```
+
+2. Push the Prisma schema:
+   ```bash
+   npx prisma db push
+   ```
+
+3. Run the seed:
+   ```bash
+   npm run db:seed
+   ```
+
+---
+
+## Upsert Mode Safety
+
+In **upsert mode**, the seed system is additive and non-destructive:
+
+- **Permissions**: upserts by `key`. Does not delete unknown DB permissions.
+- **Roles**: upserts by `slug`. Does **not** call `deleteMany` on role permissions — existing role-permission links (including custom ones added by the template user) are preserved. Only missing seed permission links are created.
+- **Users**: upserts by `email`. Does not affect other users.
+
+In **reset mode**, seed-owned records are deleted by known identifiers (role slugs, permission keys, user emails), then recreated. This is destructive but limited to known seed records.
