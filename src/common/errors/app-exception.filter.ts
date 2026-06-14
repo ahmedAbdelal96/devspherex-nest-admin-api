@@ -16,7 +16,6 @@ import {
   ArgumentsHost,
   HttpException,
   HttpStatus,
-  Logger,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { Prisma } from '@prisma/client';
@@ -25,6 +24,7 @@ import type { ApiErrorResponse, ApiErrorMeta } from './error-response.types';
 import { mapPrismaError, extractPrismaField } from './prisma-error.mapper';
 import { formatValidationErrors } from './validation-error.formatter';
 import { buildUnknownErrorResponse } from './unknown-error.formatter';
+import { LoggingService } from '../logging';
 
 function getMeta(request: Request): ApiErrorMeta {
   return {
@@ -60,7 +60,11 @@ function buildErrorResponse(
 
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
-  private readonly logger = new Logger(GlobalExceptionFilter.name);
+  private readonly doLog: boolean;
+
+  constructor(private readonly loggingService?: LoggingService) {
+    this.doLog = loggingService !== undefined;
+  }
 
   catch(exception: unknown, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
@@ -125,7 +129,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       response.status(mapping.statusCode).json(
         buildErrorResponse(mapping.message, mapping.code, mapping.statusCode, request, errors),
       );
-      this.logger.warn(`Prisma error [${exception.code}]: ${exception.message}`);
+      this.doLog && this.loggingService!.warn(`Prisma error [${exception.code}]: ${exception.message}`, GlobalExceptionFilter.name);
       return;
     }
 
@@ -139,7 +143,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
           request,
         ),
       );
-      this.logger.warn(`Prisma validation error: ${exception.message}`);
+      this.doLog && this.loggingService!.warn(`Prisma validation error: ${exception.message}`, GlobalExceptionFilter.name);
       return;
     }
 
@@ -153,7 +157,11 @@ export class GlobalExceptionFilter implements ExceptionFilter {
           request,
         ),
       );
-      this.logger.error(`Prisma initialization error: ${exception.message}`);
+      this.doLog && this.loggingService!.error(
+        `Prisma initialization error: ${exception.message}`,
+        GlobalExceptionFilter.name,
+        { requestId: getMeta(request).requestId, path: request.path, method: request.method },
+      );
       return;
     }
 
@@ -165,7 +173,17 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         ? 'An unexpected error occurred. Please try again later.'
         : this.sanitizeMessage(rawMessage);
 
-      this.logger.error(`Unhandled exception: ${exception.message}`, exception.stack);
+      this.doLog && this.loggingService!.error(
+        `Unhandled exception: ${exception.message}`,
+        GlobalExceptionFilter.name,
+        {
+          requestId: getMeta(request).requestId,
+          path: request.path,
+          method: request.method,
+          stack: exception.stack,
+          errorCode: AppErrorCodes.INTERNAL_SERVER_ERROR,
+        },
+      );
 
       (request as unknown as Record<string, unknown>)['observability'] = {
         errorCode: AppErrorCodes.INTERNAL_SERVER_ERROR,
@@ -183,7 +201,11 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     }
 
     // Handle unknown thrown values (non-Error)
-    this.logger.error(`Unknown thrown value: ${String(exception)}`);
+    this.doLog && this.loggingService!.error(
+      `Unknown thrown value: ${String(exception)}`,
+      GlobalExceptionFilter.name,
+      { requestId: getMeta(request).requestId, path: request.path, method: request.method },
+    );
     (request as unknown as Record<string, unknown>)['observability'] = {
       errorCode: AppErrorCodes.INTERNAL_SERVER_ERROR,
       errorMessage: 'An unexpected error occurred. Please try again later.',

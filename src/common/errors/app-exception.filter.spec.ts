@@ -61,7 +61,7 @@ describe('GlobalExceptionFilter', () => {
   let filter: GlobalExceptionFilter;
 
   beforeEach(() => {
-    filter = new GlobalExceptionFilter();
+    filter = new GlobalExceptionFilter(undefined);
   });
 
   describe('HttpException mapping', () => {

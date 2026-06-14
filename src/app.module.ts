@@ -6,6 +6,7 @@ import { DatabaseModule } from './common/database/database.module';
 import { RbacModule } from './common/rbac/rbac.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { PermissionsGuard } from './common/rbac/guards/permissions.guard';
+import { LoggingModule } from './common/logging';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { RolesModule } from './modules/roles/roles.module';
@@ -18,6 +19,8 @@ import { ApiRequestLogsModule } from './modules/api-request-logs/api-request-log
     // Config
     AppConfigModule,
     ConfigModule,
+    // Logging
+    LoggingModule,
     // Database
     DatabaseModule,
     // RBAC

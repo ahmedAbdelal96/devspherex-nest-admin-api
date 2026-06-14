@@ -1,16 +1,24 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe, Logger, BadRequestException, ValidationError } from '@nestjs/common';
+import { ValidationPipe, BadRequestException, ValidationError } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module';
 import { GlobalExceptionFilter } from './common/errors/app-exception.filter';
 import { ApiResponseInterceptor } from './common/api-response/api-response.interceptor';
 import { requestIdMiddleware } from './common/request-context/request-id.middleware';
 import { setupSwagger } from './common/swagger/swagger.config';
+import { LoggingService, setupGlobalExceptionHandlers } from './common/logging';
 
 async function bootstrap() {
-  const logger = new Logger('Bootstrap');
+  // Set up global exception/rejection handlers before creating the app
+  setupGlobalExceptionHandlers();
 
   const app = await NestFactory.create(AppModule);
+
+  // Replace Nest's default logger with Winston-based LoggingService
+  const loggingService = app.get(LoggingService);
+  app.useLogger(loggingService);
+
+  const logger = loggingService;
 
   // Request ID middleware — must run before any handler
   app.use(requestIdMiddleware);
@@ -36,8 +44,8 @@ async function bootstrap() {
     }),
   );
 
-  // Global exception filter
-  app.useGlobalFilters(new GlobalExceptionFilter());
+  // Global exception filter — needs LoggingService injected
+  app.useGlobalFilters(new GlobalExceptionFilter(loggingService));
 
   // Global response interceptor
   app.useGlobalInterceptors(new ApiResponseInterceptor());

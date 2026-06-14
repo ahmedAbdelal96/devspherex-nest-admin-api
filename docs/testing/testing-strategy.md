@@ -1,7 +1,7 @@
 # Testing Strategy
 
 **Date:** 2026-06-14
-**Phase:** 9
+**Phase:** 10
 
 ---
 
@@ -228,6 +228,54 @@ describe('PasswordRecoveryTokenService', () => {
   });
 });
 ```
+
+---
+
+## Phase 10 — Winston Logging Tests
+
+**Files:**
+- `src/common/logging/logging.service.spec.ts`
+- `src/common/logging/logging.redactor.spec.ts`
+
+### `logging.service.spec.ts`
+
+Tests the Winston-based `LoggingService` without requiring a real database or writing actual log files. Uses `jest.resetModules()` + `jest.requireActual()` to re-import the config module with fresh `process.env` values for environment-dependent tests.
+
+```bash
+npm run test -- --testPathPattern="logging.service.spec"
+```
+
+| Test group | What it verifies |
+|---|---|
+| `LoggingService` — construction | Service instantiates without throwing |
+| `LoggingService` — log methods | `info()`, `warn()`, `error()`, `debug()`, `verbose()`, `log()` (both signatures) do not throw |
+| `LoggingService` — sensitive data redaction | Sensitive metadata is redacted before logging (password, token, accessToken, authorization, etc.) |
+| `LoggingService` — deeply nested sensitive data | Nested objects and arrays with sensitive fields are fully redacted |
+| `LoggingService` — Error with stack | Error objects with stack traces are handled without throwing |
+| `buildLoggingConfig` — level defaults | `debug` in dev, `info` in prod, silenced in test |
+| `buildLoggingConfig` — env var overrides | `LOG_LEVEL`, `LOG_TO_CONSOLE`, `LOG_TO_FILE`, `LOG_DIR`, `LOG_FILE_MAX_SIZE`, `LOG_RETENTION_DAYS`, `LOG_PRETTY_CONSOLE`, `LOG_JSON_FILE` |
+| `getNodeEnv` | Returns current `NODE_ENV`, defaults to `'development'` |
+
+> Note: `LoggingService` is fully silent when `NODE_ENV=test` — this keeps test output clean. Actual file writing is not verified in unit tests (requires integration test with temporary directory).
+
+### `logging.redactor.spec.ts`
+
+Tests the deep redaction function with 30 sensitive patterns:
+
+```bash
+npm run test -- --testPathPattern="logging.redactor.spec"
+```
+
+| Test group | What it verifies |
+|---|---|
+| Primitives | `null`, `undefined`, strings, numbers, booleans pass through unchanged |
+| Top-level sensitive fields | `password`, `token`, `accessToken`, `refreshToken`, `authorization`, `apiKey`, `secret`, `cookie`, `otp`, `resetToken`, `hash`, `jwt`, `devOtp`, etc. → `[REDACTED]` |
+| Nested objects | Deeply nested sensitive values are redacted at all levels |
+| Arrays | Arrays of objects with sensitive fields are fully redacted |
+| Case-insensitivity | `PASSWORD`, `Password`, `password` all match |
+| Safe fields | `name`, `email`, `id`, `createdAt` pass through unchanged |
+| No mutation | Original object is not modified |
+| Empty objects/arrays | Handled without throwing |
 
 ---
 
