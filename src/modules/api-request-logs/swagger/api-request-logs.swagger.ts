@@ -7,7 +7,7 @@
 
 import { applyDecorators } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
-import { ApiStandardOkResponse } from '../../../common/swagger/api-standard-response.decorators';
+import { ApiStandardOkResponse, ApiStandardPaginatedResponse } from '../../../common/swagger/api-standard-response.decorators';
 import { ApiCommonErrorResponses } from '../../../common/swagger/api-error-response.decorators';
 import { API_TAG_API_REQUEST_LOGS } from '../../../common/swagger/api-tags';
 
@@ -25,7 +25,7 @@ export function ApiListApiRequestLogsDocs(): MethodDecorator {
       summary: 'List API request logs',
       description: 'Returns a paginated list of API request log entries for observability and debugging. Supports filtering by requestId, method, path, route, statusCode, outcome, actor, errorCode, date range, and duration. Requires api-request-logs.read permission.',
     }),
-    ApiStandardOkResponse('API request logs retrieved successfully', undefined, 200),
+    ApiStandardPaginatedResponse('API request logs retrieved successfully', undefined),
     ApiCommonErrorResponses(),
   );
 }

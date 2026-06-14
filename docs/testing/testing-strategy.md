@@ -1,7 +1,7 @@
 # Testing Strategy
 
-**Date:** 2026-06-11
-**Phase:** 7-B
+**Date:** 2026-06-14
+**Phase:** 8-R1
 
 ---
 
@@ -73,6 +73,9 @@ src/
       api-request-log.service.spec.ts                ← non-blocking logging behavior
   test-utils/
     mocks.ts                                     ← shared mock factories
+  common/swagger/
+    api-standard-response.decorators.spec.ts    ← decorator application + schema generation
+    swagger.config.spec.ts                       ← environment-aware Swagger setup
 ```
 
 ---

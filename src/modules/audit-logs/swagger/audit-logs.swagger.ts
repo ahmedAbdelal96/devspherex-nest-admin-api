@@ -7,7 +7,7 @@
 
 import { applyDecorators } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
-import { ApiStandardOkResponse, ApiStandardCreatedResponse } from '../../../common/swagger/api-standard-response.decorators';
+import { ApiStandardOkResponse, ApiStandardCreatedResponse, ApiStandardPaginatedResponse } from '../../../common/swagger/api-standard-response.decorators';
 import { ApiCommonErrorResponses } from '../../../common/swagger/api-error-response.decorators';
 import { API_TAG_AUDIT_LOGS } from '../../../common/swagger/api-tags';
 
@@ -24,7 +24,7 @@ export function ApiListAuditLogsDocs(): MethodDecorator {
       summary: 'List audit logs',
       description: 'Returns a paginated list of audit log entries. Supports filtering by actor, action, resource type/ID, status, and date range. Requires audit-logs.read permission.',
     }),
-    ApiStandardOkResponse('Audit logs retrieved successfully', undefined, 200),
+    ApiStandardPaginatedResponse('Audit logs retrieved successfully', undefined),
     ApiCommonErrorResponses(),
   );
 }

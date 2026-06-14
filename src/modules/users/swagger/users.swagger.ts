@@ -7,7 +7,7 @@
 
 import { applyDecorators } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
-import { ApiStandardOkResponse, ApiStandardCreatedResponse, ApiStandardNoContentResponse } from '../../../common/swagger/api-standard-response.decorators';
+import { ApiStandardOkResponse, ApiStandardCreatedResponse, ApiStandardNoContentResponse, ApiStandardPaginatedResponse } from '../../../common/swagger/api-standard-response.decorators';
 import { ApiCommonErrorResponses } from '../../../common/swagger/api-error-response.decorators';
 import { API_TAG_USERS } from '../../../common/swagger/api-tags';
 
@@ -35,7 +35,7 @@ export function ApiListUsersDocs(): MethodDecorator {
   return applyDecorators(
     ApiTags(API_TAG_USERS),
     ApiOperation({ summary: 'List all users', description: 'Returns a paginated list of users. Requires users.read permission.' }),
-    ApiStandardOkResponse('Users retrieved successfully', undefined, 200),
+    ApiStandardPaginatedResponse('Users retrieved successfully', undefined),
     ApiCommonErrorResponses(),
   );
 }

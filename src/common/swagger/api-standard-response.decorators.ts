@@ -62,11 +62,11 @@ export function ApiStandardNoContentResponse(
 
 /**
  * Paginated response with meta for list endpoints.
- * Use for GET list operations that return arrays with pagination.
+ * Use for GET list operations that return { items: T[], pagination: P }.
  */
 export function ApiStandardPaginatedResponse<T>(
   description: string,
-  itemSchema: { new (): T },
+  itemSchema?: { new (): T },
   options?: { pageParam?: string; limitParam?: string; totalParam?: string },
 ): MethodDecorator & ClassDecorator {
   const pageParam = options?.pageParam ?? 'page';
@@ -77,7 +77,7 @@ export function ApiStandardPaginatedResponse<T>(
     ApiOkResponse({
       status: 200,
       description,
-      schema: buildPaginatedResponseSchema(itemSchema, description, pageParam, limitParam, totalParam),
+      schema: buildListResponseSchema(itemSchema, description, pageParam, limitParam, totalParam),
     } as ApiResponseOptions),
   );
 }
@@ -132,48 +132,6 @@ function buildStandardResponseSchema<T>(
   };
 }
 
-function buildPaginatedResponseSchema<T>(
-  itemSchema: { new (): T },
-  description: string,
-  pageParam: string,
-  limitParam: string,
-  totalParam: string,
-): Record<string, unknown> {
-  return {
-    type: 'object',
-    description,
-    properties: {
-      success: { type: 'boolean', example: true, enum: [true] },
-      message: { type: 'string', example: 'Operation completed successfully' },
-      data: {
-        type: 'array',
-        items: { $ref: `#/components/schemas/${itemSchema.name}` },
-      },
-      meta: {
-        type: 'object',
-        properties: {
-          requestId: { type: 'string' },
-          timestamp: { type: 'string', format: 'date-time' },
-          path: { type: 'string' },
-          method: { type: 'string' },
-          pagination: {
-            type: 'object',
-            properties: {
-              [pageParam]: { type: 'integer', example: 1 },
-              [limitParam]: { type: 'integer', example: 20 },
-              [totalParam]: { type: 'integer', example: 100 },
-              totalPages: { type: 'integer', example: 5 },
-            },
-            required: [pageParam, limitParam, totalParam, 'totalPages'],
-          },
-        },
-        required: ['requestId', 'timestamp', 'path', 'method', 'pagination'],
-      },
-    },
-    required: ['success', 'message', 'data', 'meta'],
-  };
-}
-
 function buildMessageResponseSchema(
   message: string,
   description: string,
@@ -186,6 +144,62 @@ function buildMessageResponseSchema(
       success: { type: 'boolean', example: true, enum: [true] },
       message: { type: 'string', example: message },
       data: { type: 'null', description: 'No data payload for this response' },
+      meta: {
+        type: 'object',
+        properties: {
+          requestId: { type: 'string' },
+          timestamp: { type: 'string', format: 'date-time' },
+          path: { type: 'string' },
+          method: { type: 'string' },
+        },
+        required: ['requestId', 'timestamp', 'path', 'method'],
+      },
+    },
+    required: ['success', 'message', 'data', 'meta'],
+  };
+}
+
+/**
+ * Builds a list response schema with items + pagination inside data.
+ * Use for GET list endpoints that return { items: T[], pagination: P }.
+ */
+export function buildListResponseSchema<T>(
+  itemSchema: { new (): T } | undefined,
+  description: string,
+  pageParam = 'page',
+  limitParam = 'limit',
+  totalParam = 'total',
+): Record<string, unknown> {
+  const itemsSchema = itemSchema
+    ? { $ref: `#/components/schemas/${itemSchema.name}` }
+    : { type: 'object', description: 'Array of items' };
+
+  return {
+    type: 'object',
+    description,
+    properties: {
+      success: { type: 'boolean', example: true, enum: [true] },
+      message: { type: 'string', example: 'Operation completed successfully' },
+      data: {
+        type: 'object',
+        properties: {
+          items: {
+            type: 'array',
+            items: itemsSchema,
+          },
+          pagination: {
+            type: 'object',
+            properties: {
+              [pageParam]: { type: 'integer', example: 1 },
+              [limitParam]: { type: 'integer', example: 20 },
+              [totalParam]: { type: 'integer', example: 100 },
+              totalPages: { type: 'integer', example: 5 },
+            },
+            required: [pageParam, limitParam, totalParam, 'totalPages'],
+          },
+        },
+        required: ['items', 'pagination'],
+      },
       meta: {
         type: 'object',
         properties: {

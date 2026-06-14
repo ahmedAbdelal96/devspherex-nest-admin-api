@@ -7,7 +7,7 @@
 
 import { applyDecorators } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
-import { ApiStandardOkResponse, ApiStandardCreatedResponse, ApiStandardNoContentResponse } from '../../../common/swagger/api-standard-response.decorators';
+import { ApiStandardOkResponse, ApiStandardCreatedResponse, ApiStandardNoContentResponse, ApiStandardPaginatedResponse } from '../../../common/swagger/api-standard-response.decorators';
 import { ApiCommonErrorResponses } from '../../../common/swagger/api-error-response.decorators';
 import { API_TAG_ROLES } from '../../../common/swagger/api-tags';
 
@@ -34,7 +34,7 @@ export function ApiListRolesDocs(): MethodDecorator {
   return applyDecorators(
     ApiTags(API_TAG_ROLES),
     ApiOperation({ summary: 'List all roles', description: 'Returns a list of all roles. Requires roles.read permission.' }),
-    ApiStandardOkResponse('Roles retrieved successfully', undefined, 200),
+    ApiStandardPaginatedResponse('Roles retrieved successfully', undefined),
     ApiCommonErrorResponses(),
   );
 }
