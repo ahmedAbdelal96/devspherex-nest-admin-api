@@ -20,7 +20,10 @@
     "quality:check": "npm run lint && npm run build && npx prisma validate && npx ts-node scripts/validate-permissions.ts && npm run test",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:studio": "prisma studio"
+    "prisma:studio": "prisma studio",
+    "db:seed": "tsx prisma/seed/main.seed.ts",
+    "db:seed:upsert": "tsx prisma/seed/main.seed.ts --mode=upsert",
+    "db:seed:reset": "tsx prisma/seed/main.seed.ts --mode=reset"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",
@@ -63,6 +66,7 @@
     "supertest": "^7.2.2",
     "ts-jest": "^29.2.0",
     "ts-node": "^10.9.2",
+    "tsx": "^4.22.4",
     "typescript": "^5.6.0"
   },
   "keywords": [

@@ -1,7 +1,7 @@
 # Testing Strategy
 
 **Date:** 2026-06-14
-**Phase:** 8-R1
+**Phase:** 9
 
 ---
 
@@ -228,3 +228,28 @@ describe('PasswordRecoveryTokenService', () => {
   });
 });
 ```
+
+---
+
+## Phase 9 — Seed System Tests
+
+**File:** `src/test-utils/seed.spec.ts`
+
+Tests seed registry validation and logger sanitization without requiring a database:
+
+```bash
+npm run test -- --testPathPattern="seed.spec"
+```
+
+### What is tested
+
+| Test group | What it verifies |
+|---|---|
+| `Seed Registry` — seeder names | No duplicate seeder names |
+| `Seed Registry` — dependency order | permissions < roles < users order |
+| `Seed Registry` — reset functions | All seeders have reset functions |
+| `Seed Registry` — dependencies declared | Roles depends on permissions, users on roles |
+| `Seed Logger sanitization` | Password, token, hash fields are redacted |
+| `Admin password resolution` | SEED_ADMIN_PASSWORD env var respected; production requires it |
+
+> Note: Seed runner integration (actual upsert/reset with a database) requires a running PostgreSQL instance and is tested manually via `npm run db:seed` and `ALLOW_SEED_RESET=true npm run db:seed:reset`.
